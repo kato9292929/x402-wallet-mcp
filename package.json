@@ -1,0 +1,66 @@
+{
+  "name": "x402-wallet-mcp",
+  "version": "0.1.0",
+  "description": "stdio MCP server that lets AI agents discover and pay for x402 services with a pluggable wallet (CDP / Privy / Crossmint) plus Nevermined credits",
+  "type": "module",
+  "bin": {
+    "x402-wallet-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "tsx scripts/integration.ts",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build",
+    "prepare": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kato9292929/x402-wallet-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "x402",
+    "wallet",
+    "usdc",
+    "base",
+    "solana",
+    "cdp",
+    "privy",
+    "crossmint",
+    "nevermined"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@coinbase/cdp-sdk": "^1.61.0",
+    "@crossmint/wallets-sdk": "^1.21.2",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@nevermined-io/payments": "^1.13.0",
+    "@privy-io/node": "^0.38.0",
+    "@solana/web3.js": "^3.1.1",
+    "@x402/core": "^2.30.0",
+    "@x402/evm": "^2.30.0",
+    "@x402/extensions": "^2.30.0",
+    "@x402/fetch": "^2.30.0",
+    "@x402/svm": "^2.30.0",
+    "viem": "^2.57.16",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}
