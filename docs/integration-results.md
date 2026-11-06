@@ -17,3 +17,14 @@ Notes
 - `NVM_API_KEY` in the session environment is a `live:` key. The sandbox test above used the `sandbox:` key (`NVM_API_KEY_SELLER`) explicitly; the server now refuses to pay Nevermined when the key environment does not match `config.json` `network`.
 - Nevermined: the seller is a local sandbox endpoint from `scripts/nvm-sandbox-seller.ts` (plan `8276400030875084501580801410434147330417427812732283872643085090993314641481`, agent `88604755859322499647438371683811862392474846983346776283004905189633410696948`, 0.01 USDC for 10 credits, 1 credit per request). The same sandbox account acts as buyer and seller. The plan purchase moved 0.01 USDC on Base Sepolia (buyer 1.00 -> 0.99, seller receiver `0xc2A2AB59aF5b4FB9238bE66350FC8BdD761e40FA` +0.0099 after the 1% fee). Nevermined receipts return a `tid-...` id for the credit burn, so no explorer link is generated for it.
 - The 実証1 gateway (`https://poc-card-credits.vercel.app`) runs on Nevermined Live and was not used.
+
+## Limit checks against a real seller (no payment)
+
+`make_x402_request` called over MCP stdio with `WALLET_PROVIDER=cdp` on 2026-11-06, against the same Base Sepolia seller ($0.001 USDC). The seller answered 402 both times; the server stopped before signing.
+
+| Case | config.json | Returned (`isError: true`) | CDP balance (Base Sepolia) |
+| - | - | - | - |
+| Over per-call limit | `perCallMaxUsd: "0.0005"` | `PER_CALL_LIMIT`: "Price $0.001 exceeds the per-call limit of $0.0005. Payment was not made." `paid: false` | 0.999 -> 0.999 |
+| Host not allowed | `allowedHosts: ["example.com"]` | `HOST_NOT_ALLOWED`: "Host \"wallets-demo-seller-server.calebgcarithers.workers.dev\" is not in allowedHosts (example.com). Only the wallet owner can change this in the config file." `paid: false` | 0.999 -> 0.999 |
+
+No entry was written to `payments.jsonl` for either call.
