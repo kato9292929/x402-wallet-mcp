@@ -204,6 +204,8 @@ npm test                 # unit tests (402 parsing, accepts selection, limit che
 WALLET_PROVIDER=cdp ... npm run test:integration -- [url]   # one real payment on testnet
 ```
 
+To test the Nevermined scheme without a public seller, `scripts/nvm-sandbox-seller.ts` registers a sandbox crypto plan + agent (`register`) and serves a local endpoint behind Nevermined's `paymentMiddleware` (`serve`, port 4021). Set `NVM_SELLER_API_KEY` to a `sandbox:` key, then run the integration test against `http://localhost:4021/ask` with `NVM_API_KEY` set.
+
 The integration test defaults to a $0.001 Base Sepolia endpoint from the Bazaar, and refuses to run unless `config.json` is set to `testnet`. Get test USDC from the [Circle faucet](https://faucet.circle.com/) (Base Sepolia / Solana Devnet).
 
 ## License
