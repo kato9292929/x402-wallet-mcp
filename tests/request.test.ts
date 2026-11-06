@@ -39,6 +39,7 @@ function setup(responses: Response[], config: SpendConfig = cfg(), nvm?: Partial
 }
 
 const URL_ = "https://seller.test/api";
+const TX = "0x" + "ab".repeat(32);
 
 describe("make_x402_request flow", () => {
   beforeEach(() => {
@@ -56,7 +57,7 @@ describe("make_x402_request flow", () => {
   it("pays an exact 402, retries with the signature, and returns the receipt", async () => {
     const { requester, calls, log, guard } = setup([
       res402([exactReq("10000")]),
-      res200({ data: "paid" }, { success: true, transaction: "0xtx", network: BASE_SEPOLIA, payer: "0xabc" }),
+      res200({ data: "paid" }, { success: true, transaction: TX, network: BASE_SEPOLIA, payer: "0xabc" }),
     ]);
     const r = await requester.request({ url: URL_, method: "POST", body: { q: 1 } });
     expect(calls).toHaveLength(2);
@@ -64,12 +65,12 @@ describe("make_x402_request flow", () => {
     expect(calls[1].init?.body).toBe('{"q":1}');
     expect(r).toMatchObject({ paid: true, status: 200, sessionSpentUsd: "0.01" });
     expect((r as { payment: Record<string, unknown> }).payment).toMatchObject({
-      transaction: "0xtx",
+      transaction: TX,
       priceUsd: "0.01",
       settled: true,
-      explorerUrl: "https://sepolia.basescan.org/tx/0xtx",
+      explorerUrl: `https://sepolia.basescan.org/tx/${TX}`,
     });
-    expect(log).toHaveBeenCalledWith(expect.objectContaining({ transaction: "0xtx", priceUsd: "0.01" }));
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ transaction: TX, priceUsd: "0.01" }));
     expect(guard.sessionSpentMicros).toBe(10_000n);
   });
 
@@ -116,14 +117,14 @@ describe("make_x402_request flow", () => {
     process.env.NVM_API_KEY = "sandbox:test";
     const paymentHeaders = vi.fn(async () => ({ "payment-signature": "nvm-token" }));
     const { requester, calls } = setup(
-      [res402([nvmReq()]), res200({ ok: 1 }, { success: true, transactionHash: "0xnvm", creditsRedeemed: 1 })],
+      [res402([nvmReq()]), res200({ ok: 1 }, { success: true, transaction: "tid-123", creditsRedeemed: "1" })],
       cfg(),
       { paymentHeaders },
     );
     const r = await requester.request({ url: URL_ });
     expect(paymentHeaders).toHaveBeenCalledWith(expect.objectContaining({ planId: "4474276307", agentId: "8091842702" }), expect.anything());
     expect((calls[1].init?.headers as Record<string, string>)["payment-signature"]).toBe("nvm-token");
-    expect((r as { payment: Record<string, unknown> }).payment).toMatchObject({ provider: "nevermined", transaction: "0xnvm" });
+    expect((r as { payment: Record<string, unknown> }).payment).toMatchObject({ provider: "nevermined", transaction: "tid-123", explorerUrl: undefined });
   });
 
   it("prefers exact over nvm by default, nvm when SCHEME_PRIORITY says so", async () => {

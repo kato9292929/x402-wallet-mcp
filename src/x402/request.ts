@@ -4,7 +4,7 @@ import type { PaymentRequired } from "@x402/core/types";
 import { chainInfo, formatMicros } from "../chains.js";
 import { configDir, loadConfig, paymentLogPath, schemePriority, type SpendConfig } from "../config.js";
 import { SpendGuard, SpendLimitError } from "../limits.js";
-import { NeverminedPayer, neverminedConfigured } from "../nevermined.js";
+import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "../nevermined.js";
 import { buildX402Client, type WalletProvider } from "../providers/index.js";
 import {
   describeRequirement,
@@ -95,6 +95,14 @@ async function defaultLog(entry: Record<string, unknown>): Promise<void> {
   process.stderr.write(`[x402-wallet-mcp] payment ${JSON.stringify(entry)}\n`);
 }
 
+/** Only real chain hashes get an explorer link (Nevermined credit burns return ids like "tid-..."). */
+function isOnchainTx(network: string, tx: string): boolean {
+  const family = chainInfo(network)?.family;
+  if (family === "evm") return /^0x[0-9a-fA-F]{64}$/.test(tx);
+  if (family === "solana") return /^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(tx);
+  return false;
+}
+
 export class X402Requester {
   private exactClient?: Promise<x402Client>;
   private readonly fetchImpl: typeof fetch;
@@ -113,6 +121,7 @@ export class X402Requester {
       walletChains: this.deps.provider?.chains() ?? [],
       mode: cfg.network,
       nevermined: neverminedConfigured(),
+      neverminedEnv: neverminedEnvironment(),
     };
   }
 
@@ -256,7 +265,7 @@ export class X402Requester {
 
     const tx = typeof receipt?.transaction === "string" ? receipt.transaction : typeof receipt?.transactionHash === "string" ? receipt.transactionHash : undefined;
     const network = (typeof receipt?.network === "string" && receipt.network) || selected.network;
-    const explorer = tx ? chainInfo(network)?.explorerTx(tx) : undefined;
+    const explorer = tx && isOnchainTx(network, tx) ? chainInfo(network)?.explorerTx(tx) : undefined;
     const payment = {
       provider: selected.scheme === NVM_SCHEME ? "nevermined" : this.deps.provider?.id,
       ...describeRequirement(selected),

@@ -78,6 +78,7 @@ describe("selectRequirement", () => {
     walletChains: [BASE_SEPOLIA, SOLANA_DEVNET],
     mode: "testnet",
     nevermined: true,
+    neverminedEnv: "sandbox",
     ...over,
   });
   const parse = (accepts: unknown[]) =>
@@ -97,6 +98,13 @@ describe("selectRequirement", () => {
     const accepts = parse([exactReq("3000", BASE), nvmReq()]);
     expect(selectRequirement(accepts, ctx())?.scheme).toBe("nvm:erc4337");
     expect(selectRequirement(accepts, ctx({ nevermined: false }))).toBeUndefined();
+  });
+
+  it("only pays Nevermined when the key environment matches the network mode", () => {
+    const accepts = parse([nvmReq()]);
+    expect(evaluate(accepts, ctx({ neverminedEnv: "live" }))[0].reason).toMatch(/live/);
+    expect(evaluate(accepts, ctx({ neverminedEnv: "sandbox" }))[0].usable).toBe(true);
+    expect(evaluate(accepts, ctx({ mode: "mainnet", neverminedEnv: "live", walletChains: [] }))[0].reason).toMatch(/does not match/);
   });
 
   it("refuses mainnet in testnet mode and unsupported chains", () => {

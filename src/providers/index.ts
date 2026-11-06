@@ -8,7 +8,7 @@ import type { ProviderId, WalletProvider } from "./types.js";
 // loaded for the provider actually selected.
 const CDP_ENV = ["CDP_API_KEY_ID", "CDP_API_KEY_SECRET", "CDP_WALLET_SECRET"];
 const PRIVY_ENV = ["PRIVY_APP_ID", "PRIVY_APP_SECRET"];
-const CROSSMINT_ENV = ["CROSSMINT_API_KEY", "CROSSMINT_SIGNER_SECRET", "CROSSMINT_WALLET_ADDRESS"];
+const CROSSMINT_ENV = ["CROSSMINT_SERVER_API_KEY", "CROSSMINT_SIGNER_SECRET", "CROSSMINT_WALLET_ADDRESS"];
 
 export * from "./types.js";
 
@@ -21,7 +21,7 @@ Set WALLET_PROVIDER to one of: cdp | privy | crossmint
 
   cdp        ${CDP_ENV.join(", ")}
   privy      ${PRIVY_ENV.join(", ")}, PRIVY_WALLET_ID and/or PRIVY_SOLANA_WALLET_ID
-  crossmint  ${CROSSMINT_ENV.join(", ")} (CROSSMINT_SERVER_API_KEY is accepted for the key)
+  crossmint  ${CROSSMINT_ENV.join(", ")} (CROSSMINT_API_KEY is accepted for the key)
 
 Optional: NVM_API_KEY (Nevermined credits), SCHEME_PRIORITY (default "exact,nvm:erc4337").
 Spending limits live in ~/.x402-wallet-mcp/config.json.
