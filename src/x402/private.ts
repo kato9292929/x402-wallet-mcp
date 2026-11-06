@@ -48,6 +48,7 @@ const arciumOf = (r: Requirement): ArciumExtra | undefined => {
 
 const mxeView = (r: MxeRun) => ({
   circuit: r.circuit,
+  account: r.account,
   latencyMs: r.latencyMs,
   lamports: r.lamports,
   baseFeeLamports: r.baseFeeLamports,

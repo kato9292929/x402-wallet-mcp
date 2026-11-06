@@ -26,6 +26,8 @@ type PublicKey = anchor.web3.PublicKey;
 /** Measurements of one MXE step, safe to show (no inputs). */
 export interface MxeRun {
   circuit: string;
+  /** The Arcium computation account (its rent is the larger part of the cost). */
+  account?: string;
   queueTx: string;
   finalizeTx: string;
   latencyMs: number;
@@ -59,6 +61,7 @@ export interface MxeOps {
 
 const view = (r: ComputationRun): MxeRun => ({
   circuit: r.circuit,
+  account: r.account,
   queueTx: r.queueTx,
   finalizeTx: r.finalizeTx,
   latencyMs: r.latencyMs,
