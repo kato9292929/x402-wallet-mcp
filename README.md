@@ -19,6 +19,13 @@ It exposes the same 8 tools as Coinbase's Payments MCP (`npx @coinbase/payments-
 | `make_x402_request` | Calls a URL; on 402, signs within the limits and retries. Returns the response and the settle receipt (tx hash) |
 | `check_payment_requirements` | Returns the 402 `accepts`, which option would be paid, and whether it fits the limits — without paying |
 
+With `ARCIUM_MXE_PROGRAM_ID` set, two more (see [Private pricing](#private-pricing-arcium-mxe-optional)):
+
+| Tool | What it does |
+| - | - |
+| `private_price_match` | Settles the price with a seller by comparing the owner's `perCallMaxUsd` with the seller's sealed floor inside Arcium MPC. Pays the revealed price on a match, nothing otherwise |
+| `private_quote_auction` | Sealed-quote auction across 3+ sellers: only the lowest quote within `perCallMaxUsd` and its seller are revealed. Pays the winner |
+
 ## Quick start
 
 Requires Node.js 20+.
@@ -82,6 +89,25 @@ If a 402's `accepts` contains `scheme: "nvm:erc4337"` and `NVM_API_KEY` is set, 
 When a 402 offers both `exact` and `nvm:erc4337`, `SCHEME_PRIORITY` decides the order (default `exact,nvm:erc4337`).
 
 > Nevermined bills in credits and its 402 carries no USD price, so the USD limits (perCall / perSession) cannot apply. Cap Nevermined spend with the delegation's spending limit. `allowedHosts` still applies.
+
+### Private pricing (Arcium MXE, optional)
+
+The owner's per-call limit doubles as a sealed cap: it is encrypted on this machine to an [Arcium](https://arcium.com) MXE and compared there with what the seller sealed, so neither the seller, the chain, nor the model driving the agent ever sees it. Only the outcome is revealed (matched + price, or winner + price). The seller side is [x402-private-pricing](https://github.com/kato9292929/x402-private-pricing), whose 402 carries `accepts[i].extra.arcium`.
+
+| Variable | Description |
+| - | - |
+| `ARCIUM_MXE_PROGRAM_ID` | The `private_pricing` program on Arcium devnet. Setting it offers the two tools |
+| `ARCIUM_FEE_PAYER_KEYPAIR` | A **devnet-only** Solana keypair (JSON array of 64 numbers) holding devnet SOL only. It pays the MPC computation fees. The USDC payment itself is signed by the wallet provider as usual |
+| `SOLANA_DEVNET_RPC_URL` (optional) | Devnet RPC (default `https://api.devnet.solana.com`) |
+| `ARCIUM_CLUSTER_OFFSET` (optional) | Arcium cluster (default `456`, devnet) |
+| `ARCIUM_RFQ_DURATION_SEC` (optional) | How long a quote auction stays open (default `max(60, 30 × sellers)`) |
+
+- Works with `WALLET_PROVIDER=cdp` or `privy` (they pay on Solana) and `"network": "testnet"` only.
+- The tools take no amount. The cap is `perCallMaxUsd`, read from `config.json`.
+- While it is set, `perCallMaxUsd` is also kept out of every other tool's output: `show_wallet_app` / `check_sign_in_status` show it as `sealed`, and a limit error says only that the price is above the limit.
+- The flow: GET → 402 with `extra.arcium` → seal the cap and queue the match (or open an RFQ and have each seller place its sealed quote) → read the revealed result from the chain → GET with the offer id → a 402 at exactly the revealed price → paid through `make_x402_request`'s own path (limits, signing, receipt, `payments.jsonl` with the offer id). A 402 at any other price is not paid.
+- A seller without `extra.arcium` is handled like `make_x402_request`.
+- A match takes seconds to a minute; a quote auction a few minutes. Raise the MCP client's tool timeout if it is shorter.
 
 ## Spending limits (`~/.x402-wallet-mcp/config.json`)
 

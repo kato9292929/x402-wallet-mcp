@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { mxeOpsFromEnv, privatePricingConfigured, type MxeOps } from "./arcium/mxe.js";
 import { getResourceDetails, listBazaarResources } from "./bazaar.js";
 import { CHAINS, normalizeNetwork } from "./chains.js";
 import { configPath, loadConfig, paymentLogPath, schemePriority } from "./config.js";
 import { SpendGuard, SpendLimitError } from "./limits.js";
 import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "./nevermined.js";
 import type { WalletProvider } from "./providers/index.js";
+import { PrivatePricer } from "./x402/private.js";
 import { PaymentError, X402Requester } from "./x402/request.js";
 
 export const VERSION = "0.1.0";
@@ -20,6 +22,9 @@ export const TOOL_NAMES = [
   "make_x402_request",
   "check_payment_requirements",
 ] as const;
+
+/** Offered only when ARCIUM_MXE_PROGRAM_ID is set. */
+export const PRIVATE_TOOL_NAMES = ["private_price_match", "private_quote_auction"] as const;
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -63,16 +68,25 @@ export interface ServerOptions {
   provider: WalletProvider | null;
   guard?: SpendGuard;
   fetch?: typeof fetch;
+  /** Private pricing: on when ARCIUM_MXE_PROGRAM_ID is set (or when `mxe` is given, in tests). */
+  privatePricing?: boolean;
+  mxe?: () => MxeOps;
+  /** Passed through to the requester (tests). */
+  requesterDeps?: Partial<ConstructorParameters<typeof X402Requester>[0]>;
+  rfqDurationSec?: number;
 }
 
 export function createServer(opts: ServerOptions): McpServer {
   const provider = opts.provider;
-  const guard = opts.guard ?? new SpendGuard();
+  const privatePricing = opts.privatePricing ?? privatePricingConfigured();
+  // With private pricing on, perCallMaxUsd is the sealed cap: keep it out of every tool's output.
+  const guard = opts.guard ?? new SpendGuard({ sealCap: privatePricing });
   const requester = new X402Requester({
     provider,
     guard,
     nevermined: new NeverminedPayer(),
     fetch: opts.fetch,
+    ...opts.requesterDeps,
   });
 
   const server = new McpServer({ name: "x402-wallet-mcp", version: VERSION });
@@ -264,6 +278,54 @@ export function createServer(opts: ServerOptions): McpServer {
     },
     async (args) => run(() => requester.checkRequirements(args)),
   );
+
+  // ---------------------------------------------------------------- private pricing (Arcium MXE)
+
+  if (privatePricing) {
+    let ops: MxeOps | undefined;
+    const pricer = new PrivatePricer({
+      requester,
+      guard,
+      provider,
+      loadConfig: opts.requesterDeps?.loadConfig ?? loadConfig,
+      mxe: () => (ops ??= (opts.mxe ?? mxeOpsFromEnv)()),
+      fetch: opts.fetch,
+      rfqDurationSec: opts.rfqDurationSec ?? (Number(process.env.ARCIUM_RFQ_DURATION_SEC) || undefined),
+    });
+
+    server.registerTool(
+      "private_price_match",
+      {
+        title: "Private price match (Arcium MXE)",
+        description:
+          "Buys from a seller that offers a sealed price match: the owner's spending limit and the seller's floor are " +
+          "compared inside Arcium's MPC network, and only 'matched' plus the price are revealed. On a match it pays that " +
+          "price (within the owner's limits) and returns the response with the settlement receipt; otherwise nothing is " +
+          "paid. Takes no amount: the limit is set by the owner and is never shown. Sellers without a sealed offer are " +
+          "handled like make_x402_request. Solana devnet only; a match takes seconds to a minute.",
+        inputSchema: { url: z.string().url().describe("Full URL of the seller's x402 endpoint") },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      },
+      async ({ url }) => run(() => pricer.priceMatch(url)),
+    );
+
+    server.registerTool(
+      "private_quote_auction",
+      {
+        title: "Private quote auction (Arcium MXE)",
+        description:
+          "Asks 3 or more sellers for sealed quotes for the same resource. Inside Arcium's MPC network the lowest quote " +
+          "is compared with the owner's spending limit; only the winner and its price are revealed — losing quotes and " +
+          "the limit never are. Pays the winner (within the owner's limits) and returns the response with the receipt; " +
+          "if no quote is within the limit, nothing is paid. Solana devnet only; takes a few minutes.",
+        inputSchema: {
+          urls: z.array(z.string().url()).min(3).describe("Sellers' x402 endpoint URLs (at least 3)"),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      },
+      async ({ urls }) => run(() => pricer.quoteAuction(urls)),
+    );
+  }
 
   return server;
 }

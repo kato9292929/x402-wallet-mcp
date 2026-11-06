@@ -36,6 +36,14 @@ export interface Deps {
 
 const MAX_BODY_CHARS = 100_000;
 
+/** Extra conditions for a payment whose price was settled elsewhere (an MXE match or award). */
+export interface PayOptions {
+  /** Pay only if the 402 asks for exactly this price, for this offer. */
+  expect?: { priceMicros: bigint; offerId: string };
+  /** Added to the payments.jsonl entry (never the cap). */
+  logExtra?: Record<string, unknown>;
+}
+
 export class PaymentError extends Error {
   constructor(
     message: string,
@@ -205,7 +213,7 @@ export class X402Requester {
   }
 
   /** make_x402_request: request, pay on 402 within limits, retry, return result + receipt. */
-  async request(input: HttpRequestInput) {
+  async request(input: HttpRequestInput, opts: PayOptions = {}) {
     const cfg = await this.loadCfg();
     const first = await this.probe(input);
     if (first.status !== 402) {
@@ -227,6 +235,18 @@ export class X402Requester {
       throw new PaymentError("None of the payment options offered by the endpoint can be paid by this wallet.", {
         accepts: evaluate(pr.accepts, ctx).map((c) => ({ ...describeRequirement(c.requirement), reason: c.reason })),
       });
+    }
+
+    if (opts.expect) {
+      const offerId = (selected.extra as { arcium?: { offerId?: unknown } }).arcium?.offerId;
+      if (selected.priceMicros !== opts.expect.priceMicros || offerId !== opts.expect.offerId) {
+        // The seller asked for something other than what the MXE revealed. Not paid.
+        throw new PaymentError("The seller's 402 does not match the sealed result (price or offer differs). Payment was not made.", {
+          offeredUsd: selected.priceMicros !== undefined ? formatMicros(selected.priceMicros) : undefined,
+          agreedUsd: formatMicros(opts.expect.priceMicros),
+          offerId: opts.expect.offerId,
+        });
+      }
     }
 
     // Human-set limits. Throws SpendLimitError before anything is signed.
@@ -288,6 +308,7 @@ export class X402Requester {
       transaction: tx,
       explorerUrl: explorer,
       settled: payment.settled,
+      ...opts.logExtra,
     });
 
     if (rejected) {

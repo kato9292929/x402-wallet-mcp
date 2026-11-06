@@ -18,6 +18,16 @@ export class SpendLimitError extends Error {
 export class SpendGuard {
   private spentMicros = 0n;
 
+  /**
+   * sealCap: the per-call limit is also the cap sealed into MXE matches, so it
+   * must not reach the model. Limit errors and summaries then omit its value.
+   */
+  constructor(private readonly opts: { sealCap?: boolean } = {}) {}
+
+  get capSealed(): boolean {
+    return !!this.opts.sealCap;
+  }
+
   get sessionSpentMicros(): bigint {
     return this.spentMicros;
   }
@@ -40,8 +50,10 @@ export class SpendGuard {
     const perSession = parseUsdToMicros(cfg.perSessionMaxUsd);
     if (micros > perCall) {
       throw new SpendLimitError(
-        `Price $${formatMicros(micros)} exceeds the per-call limit of $${formatMicros(perCall)}. ` +
-          `Payment was not made.`,
+        this.opts.sealCap
+          ? `Price $${formatMicros(micros)} is above the per-call limit. Payment was not made.`
+          : `Price $${formatMicros(micros)} exceeds the per-call limit of $${formatMicros(perCall)}. ` +
+              `Payment was not made.`,
         "PER_CALL_LIMIT",
       );
     }
@@ -69,7 +81,7 @@ export class SpendGuard {
   summary(cfg: SpendConfig) {
     const perSession = parseUsdToMicros(cfg.perSessionMaxUsd);
     return {
-      perCallMaxUsd: cfg.perCallMaxUsd,
+      perCallMaxUsd: this.opts.sealCap ? "sealed (not shown: it is the cap used for private pricing)" : cfg.perCallMaxUsd,
       perSessionMaxUsd: cfg.perSessionMaxUsd,
       sessionSpentUsd: formatMicros(this.spentMicros),
       sessionRemainingUsd: formatMicros(perSession > this.spentMicros ? perSession - this.spentMicros : 0n),
