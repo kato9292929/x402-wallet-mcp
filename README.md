@@ -62,7 +62,7 @@ If the wallet has an owner (authorization key), also set `PRIVY_AUTHORIZATION_PR
 
 | Variable | Where to get it |
 | - | - |
-| `CROSSMINT_API_KEY` (alias `CROSSMINT_SERVER_API_KEY`) | Server-side key from the [Crossmint Staging Console → API Keys](https://staging.crossmint.com/console/projects/apiKeys) (`sk_staging_...`; staging keys have all scopes enabled). For production, use the [Production Console](https://www.crossmint.com/console/projects/apiKeys) |
+| `CROSSMINT_SERVER_API_KEY` (alias `CROSSMINT_API_KEY`) | Server-side key from the [Crossmint Staging Console → API Keys](https://staging.crossmint.com/console/projects/apiKeys) (`sk_staging_...`; staging keys have all scopes enabled). For production, use the [Production Console](https://www.crossmint.com/console/projects/apiKeys) |
 | `CROSSMINT_SIGNER_SECRET` | Generate with `npx -y x402-wallet-mcp crossmint-gen-secret` (32 random bytes, generated locally and never sent to Crossmint) |
 | `CROSSMINT_WALLET_ADDRESS` | Create with `npx -y x402-wallet-mcp crossmint-create-wallet` (a smart wallet with the server signer as its recovery method) |
 
@@ -73,7 +73,7 @@ A staging key only works with `network: "testnet"` (Base Sepolia), and a product
 
 | Variable | Description |
 | - | - |
-| `NVM_API_KEY` | [nevermined.app](https://nevermined.app) → **Settings → Global NVM API Keys**. A `sandbox:` key targets sandbox and a `live:` key targets live (the prefix selects the environment) |
+| `NVM_API_KEY` | [nevermined.app](https://nevermined.app) → **Settings → Global NVM API Keys**. A `sandbox:` key targets sandbox and a `live:` key targets live (the prefix selects the environment). It must match `config.json`: `testnet` pays only with a `sandbox:` key, `mainnet` only with a `live:` key |
 | `NVM_DELEGATION_ID` (recommended) | A delegation created by a human with its own spend cap and expiry. If unset, one is created on the first payment, capped at `perSessionMaxUsd` for 24 hours, and reused for the life of the process |
 | `NVM_PAYMENT_METHOD_ID` (optional) | Payment method for the auto-created delegation. Defaults to the account's first active `erc4337` (crypto wallet) method |
 
@@ -204,7 +204,7 @@ npm test                 # unit tests (402 parsing, accepts selection, limit che
 WALLET_PROVIDER=cdp ... npm run test:integration -- [url]   # one real payment on testnet
 ```
 
-To test the Nevermined scheme without a public seller, `scripts/nvm-sandbox-seller.ts` registers a sandbox crypto plan + agent (`register`) and serves a local endpoint behind Nevermined's `paymentMiddleware` (`serve`, port 4021). Set `NVM_SELLER_API_KEY` to a `sandbox:` key, then run the integration test against `http://localhost:4021/ask` with `NVM_API_KEY` set.
+To test the Nevermined scheme without a public seller, `scripts/nvm-sandbox-seller.ts` registers a sandbox crypto plan + agent (`register`) and serves a local endpoint behind Nevermined's `paymentMiddleware` (`serve`, port 4021). Set `NVM_API_KEY_SELLER` to a `sandbox:` key, then run the integration test against `http://localhost:4021/ask` with `NVM_API_KEY` set.
 
 The integration test defaults to a $0.001 Base Sepolia endpoint from the Bazaar, and refuses to run unless `config.json` is set to `testnet`. Get test USDC from the [Circle faucet](https://faucet.circle.com/) (Base Sepolia / Solana Devnet).
 

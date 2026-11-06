@@ -4,7 +4,7 @@ import type { PaymentRequired } from "@x402/core/types";
 import { chainInfo, formatMicros } from "../chains.js";
 import { configDir, loadConfig, paymentLogPath, schemePriority, type SpendConfig } from "../config.js";
 import { SpendGuard, SpendLimitError } from "../limits.js";
-import { NeverminedPayer, neverminedConfigured } from "../nevermined.js";
+import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "../nevermined.js";
 import { buildX402Client, type WalletProvider } from "../providers/index.js";
 import {
   describeRequirement,
@@ -121,6 +121,7 @@ export class X402Requester {
       walletChains: this.deps.provider?.chains() ?? [],
       mode: cfg.network,
       nevermined: neverminedConfigured(),
+      neverminedEnv: neverminedEnvironment(),
     };
   }
 

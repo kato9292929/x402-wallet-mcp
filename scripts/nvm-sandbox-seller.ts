@@ -1,8 +1,8 @@
 /**
  * Local Nevermined *sandbox* seller used to test the `nvm:erc4337` scheme.
  *
- *   NVM_SELLER_API_KEY=sandbox:... npx tsx scripts/nvm-sandbox-seller.ts register
- *   NVM_SELLER_API_KEY=sandbox:... npx tsx scripts/nvm-sandbox-seller.ts serve
+ *   NVM_API_KEY_SELLER=sandbox:... npx tsx scripts/nvm-sandbox-seller.ts register
+ *   NVM_API_KEY_SELLER=sandbox:... npx tsx scripts/nvm-sandbox-seller.ts serve
  *
  * `register` creates one crypto plan (0.01 USDC on Base Sepolia for 10 credits,
  * 1 credit per request) and one agent whose endpoint is the local server, and
@@ -22,8 +22,8 @@ const PORT = Number(process.env.PORT ?? 4021);
 const stateFile = path.join(configDir(), "nvm-sandbox-seller.json");
 
 function payments(): Payments {
-  const key = process.env.NVM_SELLER_API_KEY?.trim();
-  if (!key?.startsWith("sandbox:")) throw new Error("NVM_SELLER_API_KEY must be a sandbox: key");
+  const key = process.env.NVM_API_KEY_SELLER?.trim();
+  if (!key?.startsWith("sandbox:")) throw new Error("NVM_API_KEY_SELLER must be a sandbox: key");
   return Payments.getInstance({ nvmApiKey: key });
 }
 

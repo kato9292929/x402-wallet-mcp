@@ -12,6 +12,16 @@ export interface SelectionContext {
   mode: NetworkMode;
   /** Whether NVM_API_KEY is configured. */
   nevermined: boolean;
+  /** Environment from the NVM_API_KEY prefix ("sandbox", "live", ...). */
+  neverminedEnv?: string;
+}
+
+/** sandbox-type keys pay testnets only, live-type keys mainnets only. */
+function nvmEnvIsTestnet(env: string | undefined): boolean | undefined {
+  if (!env) return undefined;
+  if (/sandbox/i.test(env)) return true;
+  if (/live/i.test(env)) return false;
+  return undefined;
 }
 
 export interface Candidate {
@@ -29,6 +39,19 @@ export function evaluate(accepts: Requirement[], ctx: SelectionContext): Candida
     if (r.scheme === NVM_SCHEME) {
       if (!ctx.nevermined) return { requirement: r, usable: false, reason: "NVM_API_KEY is not set" };
       if (!r.planId) return { requirement: r, usable: false, reason: "Nevermined requirement has no planId" };
+      const wantTestnet = ctx.mode === "testnet";
+      const keyTestnet = nvmEnvIsTestnet(ctx.neverminedEnv);
+      if (keyTestnet !== wantTestnet) {
+        return {
+          requirement: r,
+          usable: false,
+          reason: `NVM_API_KEY is a "${ctx.neverminedEnv ?? "unknown"}" key but config.json has network="${ctx.mode}" (testnet needs a sandbox: key, mainnet a live: key)`,
+        };
+      }
+      const netTestnet = isTestnet(r.network);
+      if (netTestnet !== undefined && netTestnet !== wantTestnet) {
+        return { requirement: r, usable: false, reason: `network ${r.network} does not match config.json network="${ctx.mode}"` };
+      }
       return { requirement: r, usable: true };
     }
     if (r.scheme === "exact") {

@@ -11,18 +11,18 @@ import {
   type WalletProvider,
 } from "./types.js";
 
-export const CROSSMINT_ENV = ["CROSSMINT_API_KEY", "CROSSMINT_SIGNER_SECRET", "CROSSMINT_WALLET_ADDRESS"];
+export const CROSSMINT_ENV = ["CROSSMINT_SERVER_API_KEY", "CROSSMINT_SIGNER_SECRET", "CROSSMINT_WALLET_ADDRESS"];
 
-/** Server-side key; CROSSMINT_SERVER_API_KEY is accepted as an alias. */
+/** Server-side key; CROSSMINT_API_KEY is accepted as an alias. */
 export function crossmintApiKey(): string | undefined {
-  return process.env.CROSSMINT_API_KEY?.trim() || process.env.CROSSMINT_SERVER_API_KEY?.trim() || undefined;
+  return process.env.CROSSMINT_SERVER_API_KEY?.trim() || process.env.CROSSMINT_API_KEY?.trim() || undefined;
 }
 
 function crossmintEnv(): { missing: string[]; values: Record<string, string> } {
   const { missing, values } = requireEnv(["CROSSMINT_SIGNER_SECRET", "CROSSMINT_WALLET_ADDRESS"]);
   const apiKey = crossmintApiKey();
   if (apiKey) values.CROSSMINT_API_KEY = apiKey;
-  else missing.unshift("CROSSMINT_API_KEY");
+  else missing.unshift("CROSSMINT_SERVER_API_KEY");
   return { missing, values };
 }
 

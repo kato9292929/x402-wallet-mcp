@@ -33,7 +33,7 @@ export function crossmintGenSecret(): string {
 
 export async function crossmintCreateWallet(mode: NetworkMode, alias = "x402-wallet-mcp") {
   const { CrossmintWallets, createCrossmint } = await import("@crossmint/wallets-sdk");
-  const apiKey = process.env.CROSSMINT_API_KEY?.trim() || need("CROSSMINT_SERVER_API_KEY");
+  const apiKey = process.env.CROSSMINT_SERVER_API_KEY?.trim() || need("CROSSMINT_API_KEY");
   const secret = need("CROSSMINT_SIGNER_SECRET");
   const chain = mode === "testnet" ? "base-sepolia" : "base";
   const wallets = CrossmintWallets.from(createCrossmint({ apiKey }));
