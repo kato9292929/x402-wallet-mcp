@@ -19,15 +19,24 @@ export const TOOL_NAMES = [
   "get_resource_details",
   "make_x402_request",
   "check_payment_requirements",
+  "check_seller",
 ] as const;
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+
+/** Carries a full result that should be returned with isError: true. */
+class ResultError extends Error {
+  constructor(readonly result: unknown) {
+    super("result");
+  }
+}
 
 function ok(data: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(data, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) }] };
 }
 
 function fail(err: unknown): ToolResult {
+  if (err instanceof ResultError) return { ...ok(err.result), isError: true };
   const e = err as Error & { details?: Record<string, unknown>; code?: string };
   const payload: Record<string, unknown> = { error: e.message ?? String(err) };
   if (err instanceof SpendLimitError) {
@@ -251,7 +260,13 @@ export function createServer(opts: ServerOptions): McpServer {
       inputSchema: requestShape,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    async (args) => run(() => requester.request(args)),
+    async (args) =>
+      run(async () => {
+        const r = await requester.request(args);
+        // A purchase that did not deliver is reported as a tool error so clients notice it.
+        if (["blocked", "not_delivered", "rejected_by_seller"].includes(r.status)) throw new ResultError(r);
+        return r;
+      }),
   );
 
   server.registerTool(
@@ -263,6 +278,20 @@ export function createServer(opts: ServerOptions): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async (args) => run(() => requester.checkRequirements(args)),
+  );
+
+  server.registerTool(
+    "check_seller",
+    {
+      title: "Check seller",
+      description:
+        "Checks a seller without paying: its Seller Probe record, the 402's payment options, missing required input, " +
+        "the difference from the Bazaar price, recent payment refusals remembered for this host, and whether it supports " +
+        "Delivery Receipts (refetch after a failed delivery).",
+      inputSchema: requestShape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async (args) => run(() => requester.checkSeller(args)),
   );
 
   return server;

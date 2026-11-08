@@ -124,11 +124,17 @@ describe("validateConfig", () => {
       perSessionMaxUsd: "1.00",
       allowedHosts: ["api.example.com"],
       network: "testnet",
+      probeMode: "block",
+      priceMismatch: "warn",
+      retryWithReceipt: true,
+      reportToProbe: false,
     });
   });
   it("rejects bad values", () => {
     expect(() => validateConfig({ network: "devnet" })).toThrow();
     expect(() => validateConfig({ perCallMaxUsd: "ten" })).toThrow();
     expect(() => validateConfig([])).toThrow();
+    expect(() => validateConfig({ probeMode: "maybe" })).toThrow();
+    expect(() => validateConfig({ retryWithReceipt: "yes" })).toThrow();
   });
 });

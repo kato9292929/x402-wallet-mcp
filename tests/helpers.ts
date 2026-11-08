@@ -1,13 +1,7 @@
 import { BASE, BASE_SEPOLIA, CHAINS, SOLANA_DEVNET } from "../src/chains.js";
-import type { SpendConfig } from "../src/config.js";
+import { DEFAULT_CONFIG, type SpendConfig } from "../src/config.js";
 
-export const cfg = (over: Partial<SpendConfig> = {}): SpendConfig => ({
-  perCallMaxUsd: "0.10",
-  perSessionMaxUsd: "1.00",
-  allowedHosts: [],
-  network: "testnet",
-  ...over,
-});
+export const cfg = (over: Partial<SpendConfig> = {}): SpendConfig => ({ ...DEFAULT_CONFIG, ...over });
 
 export const exactReq = (amount: string, network = BASE_SEPOLIA, extra: Record<string, unknown> = {}) => ({
   scheme: "exact",

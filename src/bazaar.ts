@@ -116,3 +116,27 @@ export async function getResourceDetails(resource: string, fetchImpl: typeof fet
     similar: items.slice(0, 5).map((i) => i.resource),
   };
 }
+
+/**
+ * The atomic amount the Bazaar lists for this resource on `network` (exact scheme), or null
+ * when the resource is not listed there. Matched on origin + path (the query is ignored).
+ */
+export async function bazaarListedAmount(url: string, network: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const u = new URL(url);
+  const key = `${u.origin}${u.pathname}`.replace(/\/+$/, "").toLowerCase();
+  const qs = new URLSearchParams({ query: key, urlSubstring: key, limit: "20" });
+  const json = await getJson(`${BAZAAR_BASE}/search?${qs}`, fetchImpl);
+  const items = (json.resources ?? json.items ?? []) as BazaarItem[];
+  const norm = (s: string) => {
+    try {
+      const x = new URL(s);
+      return `${x.origin}${x.pathname}`.replace(/\/+$/, "").toLowerCase();
+    } catch {
+      return s.toLowerCase();
+    }
+  };
+  const item = items.find((i) => norm(i.resource) === key);
+  if (!item) return null;
+  const hit = acceptsOf(item).find((r) => r.scheme === "exact" && r.network === network);
+  return hit?.amount ?? null;
+}
