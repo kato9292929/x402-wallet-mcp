@@ -93,22 +93,87 @@ export function validateConfig(raw: unknown): SpendConfig {
  * Loads the config, creating it with defaults on first run so the human has a
  * file to edit. Re-read on every payment so edits apply without a restart.
  */
+/**
+ * Settings passed in by the plugin's userConfig (as X402_* environment variables).
+ * Empty values are ignored, so an option the user left blank falls back to the default.
+ */
+export const ENV_KEYS: Record<keyof SpendConfig, string> = {
+  perCallMaxUsd: "X402_PER_CALL_MAX_USD",
+  perSessionMaxUsd: "X402_PER_SESSION_MAX_USD",
+  allowedHosts: "X402_ALLOWED_HOSTS",
+  network: "X402_NETWORK",
+  probeMode: "X402_PROBE_MODE",
+  priceMismatch: "X402_PRICE_MISMATCH",
+  retryWithReceipt: "X402_RETRY_WITH_RECEIPT",
+  reportToProbe: "X402_REPORT_TO_PROBE",
+};
+
+export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, name] of Object.entries(ENV_KEYS)) {
+    const v = env[name]?.trim();
+    if (!v) continue;
+    if (key === "allowedHosts") {
+      out[key] = v.startsWith("[") ? JSON.parse(v) : v.split(",").map((h) => h.trim()).filter(Boolean);
+    } else if (key === "retryWithReceipt" || key === "reportToProbe") {
+      if (!/^(true|false)$/i.test(v)) throw new Error(`${name} must be true or false (got ${JSON.stringify(v)})`);
+      out[key] = v.toLowerCase() === "true";
+    } else {
+      out[key] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * The effective settings: defaults, then the plugin's userConfig (X402_* variables), then
+ * ~/.x402-wallet-mcp/config.json when that file exists. A key set in config.json wins, so the
+ * wallet owner can pin a limit locally whatever the plugin settings say. The file is only read,
+ * never created. Re-read on every payment so edits apply without a restart.
+ */
 export async function loadConfig(): Promise<SpendConfig> {
+  let fromEnv: Record<string, unknown>;
+  try {
+    fromEnv = configFromEnv();
+  } catch (err) {
+    throw new Error(`Invalid plugin setting: ${(err as Error).message}`);
+  }
   const file = configPath();
-  let text: string;
+  let fromFile: Record<string, unknown> = {};
   try {
-    text = await fs.readFile(file, "utf8");
+    const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("config.json must contain a JSON object");
+    fromFile = parsed;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    await fs.mkdir(configDir(), { recursive: true, mode: 0o700 });
-    await fs.writeFile(file, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", { mode: 0o600 });
-    return { ...DEFAULT_CONFIG };
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`Invalid ${file}: ${(err as Error).message}`);
   }
   try {
-    return validateConfig(JSON.parse(text));
+    return validateConfig({ ...fromEnv, ...fromFile });
   } catch (err) {
-    throw new Error(`Invalid ${file}: ${(err as Error).message}`);
+    throw new Error(`Invalid settings: ${(err as Error).message}`);
   }
+}
+
+/** Where each effective setting came from (for check_sign_in_status). */
+export async function configSources(): Promise<Record<string, "config.json" | "plugin setting" | "default">> {
+  const fromEnv = (() => {
+    try {
+      return configFromEnv();
+    } catch {
+      return {};
+    }
+  })();
+  let fromFile: Record<string, unknown> = {};
+  try {
+    fromFile = JSON.parse(await fs.readFile(configPath(), "utf8"));
+  } catch {
+    // no file
+  }
+  const out: Record<string, "config.json" | "plugin setting" | "default"> = {};
+  for (const key of Object.keys(ENV_KEYS)) {
+    out[key] = key in fromFile ? "config.json" : key in fromEnv ? "plugin setting" : "default";
+  }
+  return out;
 }
 
 /** SCHEME_PRIORITY env var, e.g. "exact,nvm:erc4337" (the default). */

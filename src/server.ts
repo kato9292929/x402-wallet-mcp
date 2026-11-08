@@ -2,13 +2,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getResourceDetails, listBazaarResources } from "./bazaar.js";
 import { CHAINS, normalizeNetwork } from "./chains.js";
-import { configPath, loadConfig, paymentLogPath, schemePriority } from "./config.js";
+import { configPath, configSources, loadConfig, paymentLogPath, schemePriority } from "./config.js";
 import { SpendGuard, SpendLimitError } from "./limits.js";
 import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "./nevermined.js";
 import type { WalletProvider } from "./providers/index.js";
 import { PaymentError, X402Requester } from "./x402/request.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export const TOOL_NAMES = [
   "get_wallet_address",
@@ -210,6 +210,7 @@ export function createServer(opts: ServerOptions): McpServer {
             : { configured: false },
           schemePriority: schemePriority(),
           config: cfg ? guard.summary(cfg) : { error: cfgError },
+          configSources: await configSources(),
           configFile: configPath(),
           nextSteps: status.ok
             ? undefined
@@ -258,7 +259,7 @@ export function createServer(opts: ServerOptions): McpServer {
         "(`nvm:erc4337`), within the owner's per-call / per-session limits and host allowlist, then retries and returns " +
         "the response with the settlement receipt. Over-limit requests are not paid.",
       inputSchema: requestShape,
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
     async (args) =>
       run(async () => {

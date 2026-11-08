@@ -1,0 +1,160 @@
+{
+  "name": "x402-wallet-mcp",
+  "displayName": "x402 Wallet",
+  "description": "Discover, check and pay for x402 APIs from Claude Code with your own CDP, Privy or Crossmint wallet (USDC on Base and Solana), plus Nevermined credits. Spending limits, Seller Probe lookups, on-chain payment checks and Delivery Receipt refetch are built in.",
+  "version": "0.2.0",
+  "author": {
+    "name": "x402 Inc."
+  },
+  "homepage": "https://github.com/kato9292929/x402-wallet-mcp",
+  "repository": "https://github.com/kato9292929/x402-wallet-mcp",
+  "license": "MIT",
+  "keywords": ["x402", "payments", "usdc", "wallet", "base", "solana"],
+  "userConfig": {
+    "wallet_provider": {
+      "type": "string",
+      "title": "Wallet provider",
+      "description": "Which wallet pays: cdp, privy or crossmint. Choose none to use only the discovery and checking tools.",
+      "options": ["cdp", "privy", "crossmint", "none"],
+      "default": "none"
+    },
+    "cdp_api_key_id": {
+      "type": "string",
+      "title": "CDP API key ID",
+      "description": "For wallet provider cdp. From the CDP Portal: API Keys > Secret API Keys.",
+      "sensitive": true
+    },
+    "cdp_api_key_secret": {
+      "type": "string",
+      "title": "CDP API key secret",
+      "description": "For wallet provider cdp. The privateKey from the downloaded API key file.",
+      "sensitive": true
+    },
+    "cdp_wallet_secret": {
+      "type": "string",
+      "title": "CDP wallet secret",
+      "description": "For wallet provider cdp. From the CDP Portal: Wallets > Non-custodial > Security.",
+      "sensitive": true
+    },
+    "privy_app_id": {
+      "type": "string",
+      "title": "Privy app ID",
+      "description": "For wallet provider privy. From the Privy Dashboard: App settings > Basics.",
+      "sensitive": true
+    },
+    "privy_app_secret": {
+      "type": "string",
+      "title": "Privy app secret",
+      "description": "For wallet provider privy. A full-access app secret from App settings > Basics > API keys.",
+      "sensitive": true
+    },
+    "privy_wallet_id": {
+      "type": "string",
+      "title": "Privy wallet ID",
+      "description": "For wallet provider privy. The Ethereum server wallet that pays on Base.",
+      "sensitive": true
+    },
+    "crossmint_server_api_key": {
+      "type": "string",
+      "title": "Crossmint server API key",
+      "description": "For wallet provider crossmint. A server-side key (sk_staging_... for testnet, sk_production_... for mainnet).",
+      "sensitive": true
+    },
+    "crossmint_signer_secret": {
+      "type": "string",
+      "title": "Crossmint signer secret",
+      "description": "For wallet provider crossmint. The 32-byte server signer secret authorized on the wallet.",
+      "sensitive": true
+    },
+    "crossmint_wallet_address": {
+      "type": "string",
+      "title": "Crossmint wallet address",
+      "description": "For wallet provider crossmint. The smart wallet the server signer controls.",
+      "sensitive": true
+    },
+    "nvm_api_key": {
+      "type": "string",
+      "title": "Nevermined API key (optional)",
+      "description": "Pays Nevermined credit plans (nvm:erc4337). Use a sandbox: key with network testnet and a live: key with network mainnet.",
+      "sensitive": true
+    },
+    "network": {
+      "type": "string",
+      "title": "Network",
+      "description": "testnet pays only on Base Sepolia and Solana Devnet; mainnet pays real USDC on Base and Solana.",
+      "options": ["testnet", "mainnet"],
+      "default": "testnet"
+    },
+    "per_call_max_usd": {
+      "type": "string",
+      "title": "Per-call limit (USD)",
+      "description": "Largest single payment, e.g. 0.10. Anything above it is refused before signing.",
+      "default": "0.10"
+    },
+    "per_session_max_usd": {
+      "type": "string",
+      "title": "Per-session limit (USD)",
+      "description": "Total that may be paid while the server runs, e.g. 1.00.",
+      "default": "1.00"
+    },
+    "allowed_hosts": {
+      "type": "string",
+      "title": "Allowed hosts",
+      "description": "Comma-separated host names that may be paid. Leave empty to allow every host.",
+      "default": ""
+    },
+    "probe_mode": {
+      "type": "string",
+      "title": "Seller Probe check",
+      "description": "When Seller Probe's latest paid purchase from the host was not delivered: block the payment, warn, or skip the lookup (off).",
+      "options": ["block", "warn", "off"],
+      "default": "block"
+    },
+    "price_mismatch": {
+      "type": "string",
+      "title": "Bazaar price mismatch",
+      "description": "When the 402 asks a different amount than the Bazaar lists: block, warn, or skip the check (off).",
+      "options": ["block", "warn", "off"],
+      "default": "warn"
+    },
+    "retry_with_receipt": {
+      "type": "boolean",
+      "title": "Refetch with Delivery Receipt",
+      "description": "After a paid request that did not deliver, refetch once with the same payment from sellers that publish Delivery Receipt keys.",
+      "default": true
+    },
+    "report_to_probe": {
+      "type": "boolean",
+      "title": "Report non-delivery to Seller Probe",
+      "description": "Send an anonymous not_delivered report to probe.x402jp.com (host, URL without query, network, amount, outcome; never the payer, tx or body).",
+      "default": false
+    }
+  },
+  "mcpServers": {
+    "x402-wallet": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
+      "env": {
+        "WALLET_PROVIDER": "${user_config.wallet_provider}",
+        "CDP_API_KEY_ID": "${user_config.cdp_api_key_id}",
+        "CDP_API_KEY_SECRET": "${user_config.cdp_api_key_secret}",
+        "CDP_WALLET_SECRET": "${user_config.cdp_wallet_secret}",
+        "PRIVY_APP_ID": "${user_config.privy_app_id}",
+        "PRIVY_APP_SECRET": "${user_config.privy_app_secret}",
+        "PRIVY_WALLET_ID": "${user_config.privy_wallet_id}",
+        "CROSSMINT_SERVER_API_KEY": "${user_config.crossmint_server_api_key}",
+        "CROSSMINT_SIGNER_SECRET": "${user_config.crossmint_signer_secret}",
+        "CROSSMINT_WALLET_ADDRESS": "${user_config.crossmint_wallet_address}",
+        "NVM_API_KEY": "${user_config.nvm_api_key}",
+        "X402_NETWORK": "${user_config.network}",
+        "X402_PER_CALL_MAX_USD": "${user_config.per_call_max_usd}",
+        "X402_PER_SESSION_MAX_USD": "${user_config.per_session_max_usd}",
+        "X402_ALLOWED_HOSTS": "${user_config.allowed_hosts}",
+        "X402_PROBE_MODE": "${user_config.probe_mode}",
+        "X402_PRICE_MISMATCH": "${user_config.price_mismatch}",
+        "X402_RETRY_WITH_RECEIPT": "${user_config.retry_with_receipt}",
+        "X402_REPORT_TO_PROBE": "${user_config.report_to_probe}"
+      }
+    }
+  }
+}
