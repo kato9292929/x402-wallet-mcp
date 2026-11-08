@@ -51,6 +51,14 @@ async function main() {
     console.log(JSON.stringify({ provider: provider?.id ?? "none", chains: provider?.chains(), ...(provider ? await provider.ready() : {}) }, null, 2));
     return;
   }
+  if (cmd === "check-seller") {
+    const [url, method = "GET", body] = args;
+    if (!url) die("usage: x402-wallet-mcp check-seller <url> [method] [jsonBody]");
+    const requester = new X402Requester({ provider, guard: new SpendGuard(), nevermined: new NeverminedPayer() });
+    const result = await requester.checkSeller({ url, method, body: body ? JSON.parse(body) : undefined });
+    console.log(JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2));
+    return;
+  }
   if (cmd === "pay" || cmd === "check") {
     const [url, method = "GET", body] = args;
     if (!url) die(`usage: x402-wallet-mcp ${cmd} <url> [method] [jsonBody]`);
@@ -66,7 +74,7 @@ async function main() {
     console.log(JSON.stringify(await (provider as CrossmintProvider).stagingFund(amount), null, 2));
     return;
   }
-  if (cmd && cmd !== "serve") die(`Unknown command "${cmd}". Commands: serve (default), status, check, pay, privy-create-wallet, crossmint-gen-secret, crossmint-create-wallet, crossmint-staging-fund`);
+  if (cmd && cmd !== "serve") die(`Unknown command "${cmd}". Commands: serve (default), status, check, check-seller, pay, privy-create-wallet, crossmint-gen-secret, crossmint-create-wallet, crossmint-staging-fund`);
 
   // stdout carries the MCP protocol; keep any SDK logging off it.
   console.log = console.info = console.debug = (...a: unknown[]) => console.error(...a);

@@ -14,6 +14,8 @@ export interface SelectionContext {
   nevermined: boolean;
   /** Environment from the NVM_API_KEY prefix ("sandbox", "live", ...). */
   neverminedEnv?: string;
+  /** Networks this host refused a payment on recently (net-failures.jsonl). Never chosen. */
+  avoidNetworks?: string[];
 }
 
 /** sandbox-type keys pay testnets only, live-type keys mainnets only. */
@@ -28,11 +30,16 @@ export interface Candidate {
   requirement: Requirement;
   usable: boolean;
   reason?: string;
+  /** Not usable only because of a recent refusal on its network. */
+  avoided?: boolean;
 }
 
 /** Explains, for every entry in `accepts`, whether this client can pay it. */
 export function evaluate(accepts: Requirement[], ctx: SelectionContext): Candidate[] {
   return accepts.map((r) => {
+    if (ctx.avoidNetworks?.includes(r.network)) {
+      return { requirement: r, usable: false, reason: `this seller refused a payment on ${r.network} recently`, avoided: true };
+    }
     if (!ctx.priority.includes(r.scheme)) {
       return { requirement: r, usable: false, reason: `scheme "${r.scheme}" is not in SCHEME_PRIORITY (${ctx.priority.join(",")})` };
     }

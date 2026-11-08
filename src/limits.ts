@@ -38,19 +38,13 @@ export class SpendGuard {
   checkAmount(cfg: SpendConfig, micros: bigint): void {
     const perCall = parseUsdToMicros(cfg.perCallMaxUsd);
     const perSession = parseUsdToMicros(cfg.perSessionMaxUsd);
+    // Messages carry the price only: limit, spend and balance values never leave the server.
     if (micros > perCall) {
-      throw new SpendLimitError(
-        `Price $${formatMicros(micros)} exceeds the per-call limit of $${formatMicros(perCall)}. ` +
-          `Payment was not made.`,
-        "PER_CALL_LIMIT",
-      );
+      throw new SpendLimitError(`Price $${formatMicros(micros)} exceeds the per-call limit. Payment was not made.`, "PER_CALL_LIMIT");
     }
     if (this.spentMicros + micros > perSession) {
       throw new SpendLimitError(
-        `Price $${formatMicros(micros)} would bring this session's spend to ` +
-          `$${formatMicros(this.spentMicros + micros)}, over the per-session limit of ` +
-          `$${formatMicros(perSession)} (already spent $${formatMicros(this.spentMicros)}). ` +
-          `Payment was not made.`,
+        `Price $${formatMicros(micros)} would exceed the per-session limit. Payment was not made.`,
         "PER_SESSION_LIMIT",
       );
     }
@@ -66,15 +60,17 @@ export class SpendGuard {
     if (this.spentMicros < 0n) this.spentMicros = 0n;
   }
 
+  /** What the agent may see about the limits: that they exist, not their values. */
   summary(cfg: SpendConfig) {
-    const perSession = parseUsdToMicros(cfg.perSessionMaxUsd);
     return {
-      perCallMaxUsd: cfg.perCallMaxUsd,
-      perSessionMaxUsd: cfg.perSessionMaxUsd,
-      sessionSpentUsd: formatMicros(this.spentMicros),
-      sessionRemainingUsd: formatMicros(perSession > this.spentMicros ? perSession - this.spentMicros : 0n),
+      perCallLimit: "set by the wallet owner",
+      perSessionLimit: "set by the wallet owner",
       allowedHosts: cfg.allowedHosts.length ? cfg.allowedHosts : "all hosts",
       network: cfg.network,
+      probeMode: cfg.probeMode,
+      priceMismatch: cfg.priceMismatch,
+      retryWithReceipt: cfg.retryWithReceipt,
+      reportToProbe: cfg.reportToProbe,
     };
   }
 }

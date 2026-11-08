@@ -10,11 +10,21 @@ import { parseUsdToMicros, type NetworkMode } from "./chains.js";
  * X402_WALLET_MCP_HOME). The MCP server only ever reads this file; there is
  * deliberately no tool that lets an agent change it.
  */
+export type CheckMode = "block" | "warn" | "off";
+
 export interface SpendConfig {
   perCallMaxUsd: string;
   perSessionMaxUsd: string;
   allowedHosts: string[];
   network: NetworkMode;
+  /** Seller Probe: stop when its latest paid verdict is not_delivered (block), only report it (warn), or skip it (off). */
+  probeMode: CheckMode;
+  /** The 402 price differs from the Bazaar listing: stop (block), report (warn) or skip (off). */
+  priceMismatch: CheckMode;
+  /** After a paid non-200, refetch once with the same payment from sellers that publish Delivery Receipt keys. */
+  retryWithReceipt: boolean;
+  /** Send an anonymous not_delivered report to Seller Probe (POST /reports). */
+  reportToProbe: boolean;
 }
 
 export const DEFAULT_CONFIG: SpendConfig = {
@@ -22,7 +32,23 @@ export const DEFAULT_CONFIG: SpendConfig = {
   perSessionMaxUsd: "1.00",
   allowedHosts: [],
   network: "testnet",
+  probeMode: "block",
+  priceMismatch: "warn",
+  retryWithReceipt: true,
+  reportToProbe: false,
 };
+
+function mode(v: unknown, name: string, def: CheckMode): CheckMode {
+  if (v === undefined) return def;
+  if (v === "block" || v === "warn" || v === "off") return v;
+  throw new Error(`${name} must be "block", "warn" or "off" (got ${JSON.stringify(v)})`);
+}
+
+function flag(v: unknown, name: string, def: boolean): boolean {
+  if (v === undefined) return def;
+  if (typeof v === "boolean") return v;
+  throw new Error(`${name} must be true or false (got ${JSON.stringify(v)})`);
+}
 
 export function configDir(): string {
   return process.env.X402_WALLET_MCP_HOME || path.join(os.homedir(), ".x402-wallet-mcp");
@@ -46,6 +72,10 @@ export function validateConfig(raw: unknown): SpendConfig {
     perSessionMaxUsd: String(r.perSessionMaxUsd ?? DEFAULT_CONFIG.perSessionMaxUsd),
     allowedHosts: (r.allowedHosts ?? DEFAULT_CONFIG.allowedHosts) as string[],
     network: (r.network ?? DEFAULT_CONFIG.network) as NetworkMode,
+    probeMode: mode(r.probeMode, "probeMode", DEFAULT_CONFIG.probeMode),
+    priceMismatch: mode(r.priceMismatch, "priceMismatch", DEFAULT_CONFIG.priceMismatch),
+    retryWithReceipt: flag(r.retryWithReceipt, "retryWithReceipt", DEFAULT_CONFIG.retryWithReceipt),
+    reportToProbe: flag(r.reportToProbe, "reportToProbe", DEFAULT_CONFIG.reportToProbe),
   };
   parseUsdToMicros(cfg.perCallMaxUsd);
   parseUsdToMicros(cfg.perSessionMaxUsd);
