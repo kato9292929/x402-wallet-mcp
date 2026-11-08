@@ -28,3 +28,11 @@ Notes
 | Host not allowed | `allowedHosts: ["example.com"]` | `HOST_NOT_ALLOWED`: "Host \"wallets-demo-seller-server.calebgcarithers.workers.dev\" is not in allowedHosts (example.com). Only the wallet owner can change this in the config file." `paid: false` | 0.999 -> 0.999 |
 
 No entry was written to `payments.jsonl` for either call.
+
+## Through the Claude Code plugin (2026-11-08)
+
+The plugin (`.claude-plugin/plugin.json`, version 0.2.0) was installed in Claude Code 2.1.319 from a local marketplace whose entry points at this repository's branch (`github` source), so Claude Code copied it into its cache and installed the npm dependencies from `package-lock.json`. The CDP credentials were entered as plugin settings (userConfig); the CDP environment variables were removed from the Claude Code process, so the server could only get them from the plugin settings. `claude mcp list` showed the server connected, and a `claude -p` conversation listed the 9 tools and called `check_sign_in_status` (signed in, provider cdp, limits from plugin settings) and `get_wallet_address`.
+
+| Date | Provider | Network | Payer | Price | Result | Settle tx |
+| - | - | - | - | - | - | - |
+| 2026-11-08 | cdp (via plugin, `make_x402_request` called from the conversation) | Base Sepolia | `0xC2515323BFD288DDf1f28Ca3385B974e7a864a37` | $0.001 | 200, fulfilled; settlement verified on chain, header tx matched, transferred 1000 = 402 amount | [`0xd1bbc4d1…502576`](https://sepolia.basescan.org/tx/0xd1bbc4d139cfa965085c639ff7f0896dc4bfcd4be5aa0aeb869c7028f1502576) |
