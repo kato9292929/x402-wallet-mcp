@@ -10,15 +10,19 @@ Limits for these runs: at most $0.01 per call, $0.10 in total.
 | Solana | `GbPTDBvinYY8w1CkiWac4m2TTX5ZZi4AKmACLyoiRxuU` |
 | Base | `0xC2515323BFD288DDf1f28Ca3385B974e7a864a37` |
 
-## Real payments
+## Real payments, 2026-11-08
 
-All three sellers ask for USDC on Solana mainnet (JIN and OSD offer only Solana; surf.cascade.fyi offers Solana first).
+`make_x402_request` (via the `pay` CLI, same code path) with `WALLET_PROVIDER=cdp`, `network: "mainnet"`, `perCallMaxUsd: "0.01"`, `perSessionMaxUsd: "0.10"`. All three sellers were paid in USDC on Solana mainnet. Solana USDC balance 0.500 -> 0.488 (total $0.012); Base untouched (0.50).
 
-| Seller | Expected | Price | Result |
-| - | - | - | - |
-| JIN `https://jin.x402jp.com/api/jin/series` | Delivery Receipt verifies | $0.01 | pending (wallet not funded yet) |
-| OSD `https://osd.x402jp.com/api/catalyst/NVDA` | Delivery Receipt verifies | $0.001 | pending (wallet not funded yet) |
-| surf.cascade.fyi `https://surf.cascade.fyi/api/v1/twitter/trends` (Probe: delivered, no settlement header) | tx found on chain, amount as the 402 offered | $0.001 | pending (wallet not funded yet) |
+| Seller | Status | Settlement | Header tx matched | Amount (402 / on chain) | Receipt | Tx |
+| - | - | - | - | - | - | - |
+| JIN `https://jin.x402jp.com/api/jin/series` | fulfilled (200) | verified | true | 10000 / 10000 ($0.01) | **ok** (delivery `first`, payment_id = tx) | [`4a47nwRf…ggqNTip`](https://solscan.io/tx/4a47nwRfBiZD7gnz893XRVGLSM5Q2zDzMPiWwvUhsbHSk8VD3yTZzYuKxfvHUNH2hbrfgrE6JDHjhwcR8ggqNTip) |
+| OSD `https://osd.x402jp.com/api/catalyst/NVDA` | fulfilled (200) | verified | true | 1000 / 1000 ($0.001) | **ok** (delivery `first`) | [`5oSvaTRm…JKQooVK`](https://solscan.io/tx/5oSvaTRmDMWfGjhq9ykGC2F1FB4mNTuPCdtYuftrszmjRmqGSau6boT5MYNwYSn16h9rz9GVi3sqUSWz5JKQooVK) |
+| surf.cascade.fyi `https://surf.cascade.fyi/api/v1/twitter/trends` (Probe: delivered, score 91.1) | fulfilled (200) | verified | null (**no settlement header**) | 1000 / 1000 ($0.001) | none (seller does not support receipts) | [`4iGT4tfS…FpXb3`](https://solscan.io/tx/4iGT4tfSsTmrEzAoG8yAdTq1hLQEpfKB2UCnN58XmzPJUUi6jzmbHy3rpWRDDVnZPfx2W3vUhxWHygAgLQ2FpXb3) |
+
+Body hashes (`body_sha256`): JIN `2a70a806cefd0a383d76702796b993c5f3add52abe8b4a8170e66b0eb92dce67`, OSD `a4378e5d66839cbaef6988ca3edf9059e448c6adfcdc413d7c65c0006b8f5bc4`, surf `beecd57bd83a809c591ff4912e0a8d496cc0b837e553e629c0c10f0771de414e`.
+
+For surf the seller returned no `PAYMENT-RESPONSE`; the tx was identified on chain by our own payer signature in a recent transaction of the payer, and the USDC moved matches the 402 offer exactly.
 
 ## check_seller (no payment), 2026-11-07
 
