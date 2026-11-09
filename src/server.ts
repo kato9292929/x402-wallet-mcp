@@ -8,7 +8,7 @@ import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "./
 import type { WalletProvider } from "./providers/index.js";
 import { PaymentError, X402Requester } from "./x402/request.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 export const TOOL_NAMES = [
   "get_wallet_address",

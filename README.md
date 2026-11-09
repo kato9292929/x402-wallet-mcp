@@ -44,7 +44,9 @@ The local MCP server runs in **Claude Code** (terminal, IDE extensions, desktop 
 | Refetch with Delivery Receipt | `true` / `false` | `true` |
 | Report non-delivery to Seller Probe | `true` / `false` | `false` |
 
-Only the keys of the provider you choose need values; the others can stay empty.
+Only the keys of the provider you choose need values; the others can stay empty. Values are checked when the server starts or pays: an unknown wallet provider, network or check mode is reported as an error.
+
+The plugin hands each setting to the server as `CLAUDE_PLUGIN_OPTION_<KEY>`. When it runs as a plugin, the server takes credentials only from these plugin settings: provider credentials already set in your shell environment are ignored.
 
 The plugin starts the server with `node ${CLAUDE_PLUGIN_ROOT}/dist/index.js`. `dist/` is the plain `tsc` output of `src/` (not bundled or minified).
 

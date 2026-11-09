@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadConfig } from "./config.js";
 import { SpendGuard } from "./limits.js";
 import { NeverminedPayer } from "./nevermined.js";
+import { applyPluginOptions } from "./plugin-options.js";
 import { providerFromEnv } from "./providers/index.js";
 import { createServer, VERSION } from "./server.js";
 import { crossmintCreateWallet, crossmintGenSecret, privyCreateWallet } from "./setup.js";
@@ -11,15 +12,8 @@ function die(message) {
     process.stderr.write(message.endsWith("\n") ? message : message + "\n");
     process.exit(1);
 }
-/** A plugin option the user left unset can arrive as the literal "${user_config.KEY}": treat it as empty. */
-function dropUnsetPluginOptions() {
-    for (const [k, v] of Object.entries(process.env)) {
-        if (typeof v === "string" && /^\$\{user_config\.[A-Za-z0-9_]+\}$/.test(v.trim()))
-            delete process.env[k];
-    }
-}
 async function main() {
-    dropUnsetPluginOptions();
+    applyPluginOptions();
     const [cmd, ...args] = process.argv.slice(2);
     if (cmd === "--version" || cmd === "-v") {
         console.log(VERSION);

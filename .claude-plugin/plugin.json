@@ -2,20 +2,26 @@
   "name": "x402-wallet-mcp",
   "displayName": "x402 Wallet",
   "description": "Discover, check and pay for x402 APIs from Claude Code with your own CDP, Privy or Crossmint wallet (USDC on Base and Solana), plus Nevermined credits. Spending limits, Seller Probe lookups, on-chain payment checks and Delivery Receipt refetch are built in.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "x402 Inc."
   },
   "homepage": "https://github.com/kato9292929/x402-wallet-mcp",
   "repository": "https://github.com/kato9292929/x402-wallet-mcp",
   "license": "MIT",
-  "keywords": ["x402", "payments", "usdc", "wallet", "base", "solana"],
+  "keywords": [
+    "x402",
+    "payments",
+    "usdc",
+    "wallet",
+    "base",
+    "solana"
+  ],
   "userConfig": {
     "wallet_provider": {
       "type": "string",
       "title": "Wallet provider",
-      "description": "Which wallet pays: cdp, privy or crossmint. Choose none to use only the discovery and checking tools.",
-      "options": ["cdp", "privy", "crossmint", "none"],
+      "description": "Which wallet pays: cdp, privy or crossmint. Choose none to use only the discovery and checking tools. Enter cdp, privy, crossmint or none.",
       "default": "none"
     },
     "cdp_api_key_id": {
@@ -81,8 +87,7 @@
     "network": {
       "type": "string",
       "title": "Network",
-      "description": "testnet pays only on Base Sepolia and Solana Devnet; mainnet pays real USDC on Base and Solana.",
-      "options": ["testnet", "mainnet"],
+      "description": "testnet pays only on Base Sepolia and Solana Devnet; mainnet pays real USDC on Base and Solana. Enter testnet or mainnet.",
       "default": "testnet"
     },
     "per_call_max_usd": {
@@ -106,15 +111,13 @@
     "probe_mode": {
       "type": "string",
       "title": "Seller Probe check",
-      "description": "When Seller Probe's latest paid purchase from the host was not delivered: block the payment, warn, or skip the lookup (off).",
-      "options": ["block", "warn", "off"],
+      "description": "When Seller Probe's latest paid purchase from the host was not delivered: block the payment, warn, or skip the lookup (off). Enter block, warn or off.",
       "default": "block"
     },
     "price_mismatch": {
       "type": "string",
       "title": "Bazaar price mismatch",
-      "description": "When the 402 asks a different amount than the Bazaar lists: block, warn, or skip the check (off).",
-      "options": ["block", "warn", "off"],
+      "description": "When the 402 asks a different amount than the Bazaar lists: block, warn, or skip the check (off). Enter block, warn or off.",
       "default": "warn"
     },
     "retry_with_receipt": {
@@ -133,27 +136,29 @@
   "mcpServers": {
     "x402-wallet": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/index.js"
+      ],
       "env": {
-        "WALLET_PROVIDER": "${user_config.wallet_provider}",
-        "CDP_API_KEY_ID": "${user_config.cdp_api_key_id}",
-        "CDP_API_KEY_SECRET": "${user_config.cdp_api_key_secret}",
-        "CDP_WALLET_SECRET": "${user_config.cdp_wallet_secret}",
-        "PRIVY_APP_ID": "${user_config.privy_app_id}",
-        "PRIVY_APP_SECRET": "${user_config.privy_app_secret}",
-        "PRIVY_WALLET_ID": "${user_config.privy_wallet_id}",
-        "CROSSMINT_SERVER_API_KEY": "${user_config.crossmint_server_api_key}",
-        "CROSSMINT_SIGNER_SECRET": "${user_config.crossmint_signer_secret}",
-        "CROSSMINT_WALLET_ADDRESS": "${user_config.crossmint_wallet_address}",
-        "NVM_API_KEY": "${user_config.nvm_api_key}",
-        "X402_NETWORK": "${user_config.network}",
-        "X402_PER_CALL_MAX_USD": "${user_config.per_call_max_usd}",
-        "X402_PER_SESSION_MAX_USD": "${user_config.per_session_max_usd}",
-        "X402_ALLOWED_HOSTS": "${user_config.allowed_hosts}",
-        "X402_PROBE_MODE": "${user_config.probe_mode}",
-        "X402_PRICE_MISMATCH": "${user_config.price_mismatch}",
-        "X402_RETRY_WITH_RECEIPT": "${user_config.retry_with_receipt}",
-        "X402_REPORT_TO_PROBE": "${user_config.report_to_probe}"
+        "CLAUDE_PLUGIN_OPTION_WALLET_PROVIDER": "${user_config.wallet_provider}",
+        "CLAUDE_PLUGIN_OPTION_CDP_API_KEY_ID": "${user_config.cdp_api_key_id}",
+        "CLAUDE_PLUGIN_OPTION_CDP_API_KEY_SECRET": "${user_config.cdp_api_key_secret}",
+        "CLAUDE_PLUGIN_OPTION_CDP_WALLET_SECRET": "${user_config.cdp_wallet_secret}",
+        "CLAUDE_PLUGIN_OPTION_PRIVY_APP_ID": "${user_config.privy_app_id}",
+        "CLAUDE_PLUGIN_OPTION_PRIVY_APP_SECRET": "${user_config.privy_app_secret}",
+        "CLAUDE_PLUGIN_OPTION_PRIVY_WALLET_ID": "${user_config.privy_wallet_id}",
+        "CLAUDE_PLUGIN_OPTION_CROSSMINT_SERVER_API_KEY": "${user_config.crossmint_server_api_key}",
+        "CLAUDE_PLUGIN_OPTION_CROSSMINT_SIGNER_SECRET": "${user_config.crossmint_signer_secret}",
+        "CLAUDE_PLUGIN_OPTION_CROSSMINT_WALLET_ADDRESS": "${user_config.crossmint_wallet_address}",
+        "CLAUDE_PLUGIN_OPTION_NVM_API_KEY": "${user_config.nvm_api_key}",
+        "CLAUDE_PLUGIN_OPTION_NETWORK": "${user_config.network}",
+        "CLAUDE_PLUGIN_OPTION_PER_CALL_MAX_USD": "${user_config.per_call_max_usd}",
+        "CLAUDE_PLUGIN_OPTION_PER_SESSION_MAX_USD": "${user_config.per_session_max_usd}",
+        "CLAUDE_PLUGIN_OPTION_ALLOWED_HOSTS": "${user_config.allowed_hosts}",
+        "CLAUDE_PLUGIN_OPTION_PROBE_MODE": "${user_config.probe_mode}",
+        "CLAUDE_PLUGIN_OPTION_PRICE_MISMATCH": "${user_config.price_mismatch}",
+        "CLAUDE_PLUGIN_OPTION_RETRY_WITH_RECEIPT": "${user_config.retry_with_receipt}",
+        "CLAUDE_PLUGIN_OPTION_REPORT_TO_PROBE": "${user_config.report_to_probe}"
       }
     }
   }

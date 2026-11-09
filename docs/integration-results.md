@@ -46,3 +46,14 @@ Since 0.2.0 the `nvm:erc4337` scheme calls Nevermined's REST API directly (payme
 | 2026-11-09 | nevermined (REST, via plugin, `make_x402_request` called from the conversation) | Base Sepolia (sandbox) | 200, fulfilled; receipt `success: true`, `billingModel: credits`, `creditsRedeemed: 1`, `remainingBalance: 7` | **8 → 7** (read separately with the SDK's `getPlanBalance`) | `tid-b82ccb6a-fb4f-4bdf-82f9-08102e8b891d` |
 
 The server process had no `NVM_DELEGATION_ID`, so it created its own delegation over REST 3 s before the payment (`512cbf08-f71f-401d-8075-6170ea078e11`, erc4337, limit 100 cents = the default per-session limit, status Active), then minted the access token with it.
+
+## Plugin 0.2.1: settings passed as CLAUDE_PLUGIN_OPTION_* (2026-11-09)
+
+After the directory's Validate, the plugin hands its settings to the server as `CLAUDE_PLUGIN_OPTION_<KEY>` and, as a plugin, ignores provider credentials already set in the shell. Checked with the plugin installed in Claude Code from the branch:
+
+- Wallet provider `cdp` with no credentials in the plugin settings, while the shell had the CDP variables set: `check_sign_in_status` returned `signedIn: false`, "Missing environment variables: CDP_API_KEY_ID, CDP_API_KEY_SECRET, CDP_WALLET_SECRET" — the shell values were not used.
+- With the CDP credentials entered as plugin settings:
+
+| Date | Provider | Network | Payer | Price | Result | Settle tx |
+| - | - | - | - | - | - | - |
+| 2026-11-09 | cdp (plugin 0.2.1) | Base Sepolia | `0xC2515323BFD288DDf1f28Ca3385B974e7a864a37` | $0.001 | 200, fulfilled; settlement verified, header tx matched, transferred 1000 = 402 amount | [`0x085906d5…c37288`](https://sepolia.basescan.org/tx/0x085906d588a1daac346d11d077c5718ccc0b0e82be8ed92147df0232acc37288) |

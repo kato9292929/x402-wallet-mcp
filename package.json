@@ -1,6 +1,6 @@
 {
   "name": "x402-wallet-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "stdio MCP server that lets AI agents discover and pay for x402 services with a pluggable wallet (CDP / Privy / Crossmint) plus Nevermined credits",
   "type": "module",
   "bin": {
