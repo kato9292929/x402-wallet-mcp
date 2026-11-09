@@ -1,6 +1,9 @@
 /**
  * Local Nevermined *sandbox* seller used to test the `nvm:erc4337` scheme.
  *
+ * Needs the Nevermined SDK, which is not a dependency of this package:
+ *   npm i --no-save @nevermined-io/payments@1.13.0 express@4.21.2
+ *
  *   NVM_API_KEY_SELLER=sandbox:... npx tsx scripts/nvm-sandbox-seller.ts register
  *   NVM_API_KEY_SELLER=sandbox:... npx tsx scripts/nvm-sandbox-seller.ts serve
  *

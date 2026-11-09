@@ -14,7 +14,15 @@ function die(message: string): never {
   process.exit(1);
 }
 
+/** A plugin option the user left unset can arrive as the literal "${user_config.KEY}": treat it as empty. */
+function dropUnsetPluginOptions(): void {
+  for (const [k, v] of Object.entries(process.env)) {
+    if (typeof v === "string" && /^\$\{user_config\.[A-Za-z0-9_]+\}$/.test(v.trim())) delete process.env[k];
+  }
+}
+
 async function main() {
+  dropUnsetPluginOptions();
   const [cmd, ...args] = process.argv.slice(2);
 
   if (cmd === "--version" || cmd === "-v") {
