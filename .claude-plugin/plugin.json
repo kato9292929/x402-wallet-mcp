@@ -1,8 +1,8 @@
 {
-  "name": "x402-wallet-mcp",
-  "displayName": "x402 Wallet",
+  "name": "agentpay402-mcp",
+  "displayName": "AgentPay402 MCP",
   "description": "Discover, check and pay for x402 APIs from Claude Code with your own CDP, Privy or Crossmint wallet (USDC on Base and Solana), plus Nevermined credits. Spending limits, Seller Probe lookups, on-chain payment checks and Delivery Receipt refetch are built in.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "author": {
     "name": "x402 Inc."
   },

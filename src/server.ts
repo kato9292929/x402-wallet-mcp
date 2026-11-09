@@ -8,7 +8,7 @@ import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "./
 import type { WalletProvider } from "./providers/index.js";
 import { PaymentError, X402Requester } from "./x402/request.js";
 
-export const VERSION = "0.2.1";
+export const VERSION = "0.3.0";
 
 export const TOOL_NAMES = [
   "get_wallet_address",
@@ -84,7 +84,7 @@ export function createServer(opts: ServerOptions): McpServer {
     fetch: opts.fetch,
   });
 
-  const server = new McpServer({ name: "x402-wallet-mcp", version: VERSION });
+  const server = new McpServer({ name: "agentpay402-mcp", version: VERSION });
 
   const pickChains = (chain?: string): string[] => {
     if (!provider) throw new Error(NO_WALLET);
