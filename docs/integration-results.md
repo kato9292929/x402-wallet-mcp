@@ -36,3 +36,13 @@ The plugin (`.claude-plugin/plugin.json`, version 0.2.0) was installed in Claude
 | Date | Provider | Network | Payer | Price | Result | Settle tx |
 | - | - | - | - | - | - | - |
 | 2026-11-08 | cdp (via plugin, `make_x402_request` called from the conversation) | Base Sepolia | `0xC2515323BFD288DDf1f28Ca3385B974e7a864a37` | $0.001 | 200, fulfilled; settlement verified on chain, header tx matched, transferred 1000 = 402 amount | [`0xd1bbc4d1…502576`](https://sepolia.basescan.org/tx/0xd1bbc4d139cfa965085c639ff7f0896dc4bfcd4be5aa0aeb869c7028f1502576) |
+
+## Nevermined over REST, through the plugin (2026-11-09)
+
+Since 0.2.0 the `nvm:erc4337` scheme calls Nevermined's REST API directly (payment methods, create delegation, `/api/v1/x402/permissions`) instead of `@nevermined-io/payments`. Checked with one payment through the plugin installed from `main` (local marketplace, `github` source), settings: wallet provider `none`, network `testnet`, Nevermined API key = the sandbox key. Seller: the local sandbox seller from `scripts/nvm-sandbox-seller.ts` (plan `8276400030875084501580801410434147330417427812732283872643085090993314641481`, 1 credit per request).
+
+| Date | Provider | Network | Result | Credits (plan balance before → after) | Credit burn |
+| - | - | - | - | - | - |
+| 2026-11-09 | nevermined (REST, via plugin, `make_x402_request` called from the conversation) | Base Sepolia (sandbox) | 200, fulfilled; receipt `success: true`, `billingModel: credits`, `creditsRedeemed: 1`, `remainingBalance: 7` | **8 → 7** (read separately with the SDK's `getPlanBalance`) | `tid-b82ccb6a-fb4f-4bdf-82f9-08102e8b891d` |
+
+The server process had no `NVM_DELEGATION_ID`, so it created its own delegation over REST 3 s before the payment (`512cbf08-f71f-401d-8075-6170ea078e11`, erc4337, limit 100 cents = the default per-session limit, status Active), then minted the access token with it.
