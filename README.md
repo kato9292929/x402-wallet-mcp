@@ -1,6 +1,6 @@
-# x402-wallet-mcp
+# AgentPay402 MCP
 
-A Claude Code plugin with a local MCP server that lets Claude **discover, price, check and pay for** [x402](https://x402.org) APIs with your own wallet.
+AgentPay402 MCP (`agentpay402-mcp`) is a Claude Code plugin with a local MCP server that lets Claude **discover, price, check and pay for** [x402](https://x402.org) APIs with your own wallet.
 It exposes the 8 tools of Coinbase's Payments MCP plus `check_seller`, and the wallet is pluggable: **CDP / Privy / Crossmint**, paying USDC on Base and Solana. When a 402 offers Nevermined credits (`nvm:erc4337`), it can pay those too.
 
 - Spending limits (per call / per session / allowed hosts) are set by you in the plugin settings or in `~/.x402-wallet-mcp/config.json`. No tool lets Claude change them.
@@ -26,7 +26,7 @@ It exposes the 8 tools of Coinbase's Payments MCP plus `check_seller`, and the w
 The local MCP server runs in **Claude Code** (terminal, IDE extensions, desktop app's Code tab). Claude chat on claude.ai and Cowork do not start local servers from plugins. Node.js 20+ and npm must be on your PATH; Claude Code installs the plugin's npm dependencies from `package-lock.json`.
 
 1. Install the plugin from the Claude plugin directory (`/plugin directory`), or for local testing run `claude --plugin-dir /path/to/x402-wallet-mcp`.
-2. Claude Code asks for the plugin settings (or run `/plugin configure x402-wallet-mcp`). Credentials are stored in your system's secure credential store, not in `settings.json`.
+2. Claude Code asks for the plugin settings (or run `/plugin configure agentpay402-mcp`). Credentials are stored in your system's secure credential store, not in `settings.json`.
 3. Start a new session and ask Claude to run `check_sign_in_status`.
 
 | Setting | Meaning | Default |
@@ -47,6 +47,8 @@ The local MCP server runs in **Claude Code** (terminal, IDE extensions, desktop 
 Only the keys of the provider you choose need values; the others can stay empty. Values are checked when the server starts or pays: an unknown wallet provider, network or check mode is reported as an error.
 
 The plugin hands each setting to the server as `CLAUDE_PLUGIN_OPTION_<KEY>`. When it runs as a plugin, the server takes credentials only from these plugin settings: provider credentials already set in your shell environment are ignored.
+
+The repository and the npm package keep the name `x402-wallet-mcp` (used by the CLI commands below), and the local data folder stays `~/.x402-wallet-mcp/`.
 
 The plugin starts the server with `node ${CLAUDE_PLUGIN_ROOT}/dist/index.js`. `dist/` is the plain `tsc` output of `src/` (not bundled or minified).
 
