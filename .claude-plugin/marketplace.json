@@ -1,0 +1,15 @@
+{
+  "name": "x402inc",
+  "description": "Claude Code plugins from x402 Inc.",
+  "owner": {
+    "name": "x402 Inc.",
+    "url": "https://github.com/kato9292929"
+  },
+  "plugins": [
+    {
+      "name": "agentpay402-mcp",
+      "source": "./",
+      "description": "AgentPay402 MCP: discover, check and pay for x402 APIs from Claude Code with your own CDP, Privy or Crossmint wallet, plus Nevermined credits."
+    }
+  ]
+}
