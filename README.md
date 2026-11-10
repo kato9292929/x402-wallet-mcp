@@ -1,5 +1,16 @@
 # AgentPay402 MCP
 
+## Install
+
+```bash
+claude plugin marketplace add kato9292929/x402-wallet-mcp
+claude plugin install agentpay402-mcp@x402inc
+```
+
+**Claude Code only.** The plugin runs a local MCP server on your computer, which only Claude Code starts (terminal, IDE extensions, the desktop app's Code tab). It does not work in Claude chat on claude.ai, the Claude desktop app's chat, or Cowork. Node.js 20+ and npm must be on your PATH. After installing, enter your settings when Claude Code asks (or run `/plugin configure agentpay402-mcp@x402inc`), then start a new session.
+
+## About
+
 AgentPay402 MCP (`agentpay402-mcp`) is a Claude Code plugin with a local MCP server that lets Claude **discover, price, check and pay for** [x402](https://x402.org) APIs with your own wallet.
 It exposes the 8 tools of Coinbase's Payments MCP plus `check_seller`, and the wallet is pluggable: **CDP / Privy / Crossmint**, paying USDC on Base and Solana. When a 402 offers Nevermined credits (`nvm:erc4337`), it can pay those too.
 
@@ -21,13 +32,15 @@ It exposes the 8 tools of Coinbase's Payments MCP plus `check_seller`, and the w
 | `check_payment_requirements` | Returns the 402 `accepts`, which option would be paid, and whether it fits the limits — without paying |
 | `check_seller` | Runs the pre-payment checks only — Seller Probe record, 402 `accepts`, missing input, Bazaar price difference, remembered refusals, Delivery Receipt support — without paying |
 
-## Install (Claude Code plugin)
+## Setup
 
-The local MCP server runs in **Claude Code** (terminal, IDE extensions, desktop app's Code tab). Claude chat on claude.ai and Cowork do not start local servers from plugins. Node.js 20+ and npm must be on your PATH; Claude Code installs the plugin's npm dependencies from `package-lock.json`.
+This repository is its own plugin marketplace (`x402inc`, in `.claude-plugin/marketplace.json`) and lists one plugin, `agentpay402-mcp`, at the repository root. Claude Code installs the plugin's npm dependencies from `package-lock.json` when you install it.
 
-1. Install the plugin from the Claude plugin directory (`/plugin directory`), or for local testing run `claude --plugin-dir /path/to/x402-wallet-mcp`.
-2. Claude Code asks for the plugin settings (or run `/plugin configure agentpay402-mcp`). Credentials are stored in your system's secure credential store, not in `settings.json`.
+1. Add the marketplace and install the plugin with the two commands under [Install](#install). Inside a Claude Code session, `/plugin marketplace add kato9292929/x402-wallet-mcp` and `/plugin install agentpay402-mcp@x402inc` do the same.
+2. Claude Code asks for the plugin settings (or run `/plugin configure agentpay402-mcp@x402inc`). Credentials are stored in your system's secure credential store, not in `settings.json`.
 3. Start a new session and ask Claude to run `check_sign_in_status`.
+
+To update later: `claude plugin marketplace update x402inc`. To try a local checkout without installing: `claude --plugin-dir /path/to/x402-wallet-mcp`.
 
 | Setting | Meaning | Default |
 | - | - | - |
