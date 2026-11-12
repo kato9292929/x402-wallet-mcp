@@ -99,7 +99,7 @@ export class CrossmintProvider implements WalletProvider {
     const notes = testnetFundingNotes(chain);
     if (this.isStagingKey()) {
       notes.push(
-        "Crossmint staging: the wallet owner can mint test USDXM with `npx x402-wallet-mcp crossmint-staging-fund 5` " +
+        "Crossmint staging: the wallet owner can mint test USDXM with `npx agentpay402-mcp crossmint-staging-fund 5` " +
           "(only useful for sellers that accept USDXM; most x402 sellers on Base Sepolia want USDC).",
       );
     } else if (!CHAINS[chain].testnet) {

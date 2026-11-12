@@ -1,15 +1,19 @@
 {
-  "name": "x402-wallet-mcp",
-  "version": "0.3.1",
-  "description": "stdio MCP server that lets AI agents discover and pay for x402 services with a pluggable wallet (CDP / Privy / Crossmint) plus Nevermined credits",
+  "name": "agentpay402-mcp",
+  "version": "0.4.0",
+  "mcpName": "io.github.kato9292929/agentpay402-mcp",
+  "description": "AgentPay402 MCP: an MCP server that lets AI agents discover, check and pay for x402 APIs with their own CDP, Privy or Crossmint wallet, with Seller Probe checks, on-chain payment proof and Delivery Receipt refetch.",
   "type": "module",
   "bin": {
+    "agentpay402-mcp": "dist/index.js",
     "x402-wallet-mcp": "dist/index.js"
   },
   "files": [
     "dist",
     "README.md",
-    ".env.example"
+    "LICENSE",
+    ".env.example",
+    "server.json"
   ],
   "engines": {
     "node": ">=20"
@@ -29,16 +33,18 @@
     "url": "git+https://github.com/kato9292929/x402-wallet-mcp.git"
   },
   "keywords": [
-    "mcp",
-    "x402",
-    "wallet",
-    "usdc",
+    "agentpay402",
     "base",
-    "solana",
     "cdp",
-    "privy",
     "crossmint",
-    "nevermined"
+    "mcp",
+    "model-context-protocol",
+    "nevermined",
+    "privy",
+    "solana",
+    "usdc",
+    "wallet",
+    "x402"
   ],
   "license": "MIT",
   "dependencies": {
@@ -63,5 +69,10 @@
     "typescript": "^5.9.3",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
-  }
+  },
+  "homepage": "https://github.com/kato9292929/x402-wallet-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/kato9292929/x402-wallet-mcp/issues"
+  },
+  "author": "x402 Inc."
 }

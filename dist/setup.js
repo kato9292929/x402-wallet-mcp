@@ -1,9 +1,9 @@
 /**
  * Human-run setup helpers (CLI only, never exposed as MCP tools).
  *
- *   x402-wallet-mcp privy-create-wallet [ethereum|solana]
- *   x402-wallet-mcp crossmint-create-wallet [alias]
- *   x402-wallet-mcp crossmint-gen-secret
+ *   agentpay402-mcp privy-create-wallet [ethereum|solana]
+ *   agentpay402-mcp crossmint-create-wallet [alias]
+ *   agentpay402-mcp crossmint-gen-secret
  */
 import { randomBytes } from "node:crypto";
 function need(name) {

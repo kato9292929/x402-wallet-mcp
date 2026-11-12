@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build and check dist/ is committed and current
+        run: |
+          npm run build
+          git diff --exit-code -- dist
+      - name: server.json and package.json agree
+        run: |
+          node -e '
+            const p = require("./package.json"), s = require("./server.json"), m = require("./.claude-plugin/plugin.json");
+            const bad = [];
+            if (p.mcpName !== s.name) bad.push("mcpName != server.json name");
+            if (s.version !== p.version || s.packages[0].version !== p.version) bad.push("server.json version != package.json version");
+            if (s.packages[0].identifier !== p.name) bad.push("server.json identifier != package name");
+            if (m.version !== p.version) bad.push("plugin.json version != package.json version");
+            if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+          '

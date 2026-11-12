@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "agentpay402": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "agentpay402-mcp@0.4.0"]
+    }
+  }
+}

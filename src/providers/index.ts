@@ -14,7 +14,7 @@ export * from "./types.js";
 
 export const PROVIDER_IDS: ProviderId[] = ["cdp", "privy", "crossmint"];
 
-export const SETUP_HELP = `x402-wallet-mcp: WALLET_PROVIDER is not set.
+export const SETUP_HELP = `agentpay402-mcp: WALLET_PROVIDER is not set.
 
 Set WALLET_PROVIDER to one of: cdp | privy | crossmint
 (or "none" to run only the discovery tools without a wallet).
@@ -28,7 +28,7 @@ Spending limits live in ~/.x402-wallet-mcp/config.json.
 
 Example (Claude Code):
   claude mcp add x402-wallet -e WALLET_PROVIDER=cdp -e CDP_API_KEY_ID=... \\
-    -e CDP_API_KEY_SECRET=... -e CDP_WALLET_SECRET=... -- npx -y x402-wallet-mcp
+    -e CDP_API_KEY_SECRET=... -e CDP_WALLET_SECRET=... -- npx -y agentpay402-mcp
 
 See https://github.com/kato9292929/x402-wallet-mcp#readme
 `;
