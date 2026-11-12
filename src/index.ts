@@ -55,7 +55,7 @@ async function main() {
   }
   if (cmd === "check-seller") {
     const [url, method = "GET", body] = args;
-    if (!url) die("usage: x402-wallet-mcp check-seller <url> [method] [jsonBody]");
+    if (!url) die("usage: agentpay402-mcp check-seller <url> [method] [jsonBody]");
     const requester = new X402Requester({ provider, guard: new SpendGuard(), nevermined: new NeverminedPayer() });
     const result = await requester.checkSeller({ url, method, body: body ? JSON.parse(body) : undefined });
     console.log(JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2));
@@ -63,7 +63,7 @@ async function main() {
   }
   if (cmd === "pay" || cmd === "check") {
     const [url, method = "GET", body] = args;
-    if (!url) die(`usage: x402-wallet-mcp ${cmd} <url> [method] [jsonBody]`);
+    if (!url) die(`usage: agentpay402-mcp ${cmd} <url> [method] [jsonBody]`);
     const requester = new X402Requester({ provider, guard: new SpendGuard(), nevermined: new NeverminedPayer() });
     const input = { url, method, body: body ? JSON.parse(body) : undefined };
     const result = cmd === "pay" ? await requester.request(input) : await requester.checkRequirements(input);

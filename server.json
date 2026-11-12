@@ -1,0 +1,194 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kato9292929/agentpay402-mcp",
+  "title": "AgentPay402 MCP",
+  "description": "Pay for x402 APIs safely with your own wallet: Seller Probe check, on-chain proof, receipt refetch.",
+  "repository": {
+    "url": "https://github.com/kato9292929/x402-wallet-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/kato9292929/x402-wallet-mcp#readme",
+  "version": "0.4.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "agentpay402-mcp",
+      "version": "0.4.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "WALLET_PROVIDER",
+          "description": "Wallet that pays: cdp, privy or crossmint; none runs only the discovery and checking tools.",
+          "format": "string",
+          "isRequired": true,
+          "isSecret": false,
+          "default": "none",
+          "choices": [
+            "cdp",
+            "privy",
+            "crossmint",
+            "none"
+          ]
+        },
+        {
+          "name": "CDP_API_KEY_ID",
+          "description": "CDP API key ID (WALLET_PROVIDER=cdp).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CDP_API_KEY_SECRET",
+          "description": "CDP API key secret (WALLET_PROVIDER=cdp).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CDP_WALLET_SECRET",
+          "description": "CDP wallet secret (WALLET_PROVIDER=cdp).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "PRIVY_APP_ID",
+          "description": "Privy app ID (WALLET_PROVIDER=privy).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "PRIVY_APP_SECRET",
+          "description": "Privy app secret (WALLET_PROVIDER=privy).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "PRIVY_WALLET_ID",
+          "description": "Privy Ethereum server wallet ID that pays on Base (WALLET_PROVIDER=privy).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CROSSMINT_SERVER_API_KEY",
+          "description": "Crossmint server-side API key (WALLET_PROVIDER=crossmint).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CROSSMINT_SIGNER_SECRET",
+          "description": "Crossmint server signer secret (WALLET_PROVIDER=crossmint).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CROSSMINT_WALLET_ADDRESS",
+          "description": "Crossmint smart wallet address (WALLET_PROVIDER=crossmint).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "NVM_API_KEY",
+          "description": "Optional Nevermined API key for nvm:erc4337 credit plans (sandbox: with testnet, live: with mainnet).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "X402_NETWORK",
+          "description": "testnet (Base Sepolia, Solana Devnet) or mainnet (real USDC on Base and Solana).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "testnet",
+          "choices": [
+            "testnet",
+            "mainnet"
+          ]
+        },
+        {
+          "name": "X402_PER_CALL_MAX_USD",
+          "description": "Largest single payment in USD; anything above it is refused before signing.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "0.10"
+        },
+        {
+          "name": "X402_PER_SESSION_MAX_USD",
+          "description": "Total USD that may be paid while the server runs.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "1.00"
+        },
+        {
+          "name": "X402_ALLOWED_HOSTS",
+          "description": "Comma-separated hosts that may be paid; empty allows every host.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "X402_PROBE_MODE",
+          "description": "When Seller Probe recorded the host as paid but not delivered: block, warn or off.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "block",
+          "choices": [
+            "block",
+            "warn",
+            "off"
+          ]
+        },
+        {
+          "name": "X402_PRICE_MISMATCH",
+          "description": "When the 402 price differs from the Bazaar listing: block, warn or off.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "warn",
+          "choices": [
+            "block",
+            "warn",
+            "off"
+          ]
+        },
+        {
+          "name": "X402_RETRY_WITH_RECEIPT",
+          "description": "Refetch once with the same payment from Delivery Receipt sellers after a failed delivery.",
+          "format": "boolean",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "true",
+          "choices": [
+            "true",
+            "false"
+          ]
+        },
+        {
+          "name": "X402_REPORT_TO_PROBE",
+          "description": "Send an anonymous not_delivered report to Seller Probe.",
+          "format": "boolean",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "false",
+          "choices": [
+            "true",
+            "false"
+          ]
+        }
+      ]
+    }
+  ]
+}

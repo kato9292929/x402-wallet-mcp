@@ -61,13 +61,22 @@ Only the keys of the provider you choose need values; the others can stay empty.
 
 The plugin hands each setting to the server as `CLAUDE_PLUGIN_OPTION_<KEY>`. When it runs as a plugin, the server takes credentials only from these plugin settings: provider credentials already set in your shell environment are ignored.
 
-The repository and the npm package keep the name `x402-wallet-mcp` (used by the CLI commands below), and the local data folder stays `~/.x402-wallet-mcp/`.
+The npm package is `agentpay402-mcp` (also in the official MCP Registry as `io.github.kato9292929/agentpay402-mcp`); the repository keeps the name `x402-wallet-mcp`, and the local data folder stays `~/.x402-wallet-mcp/`.
+
+### Plugin or npm: how the server tells
+
+The same `dist/index.js` runs both ways. At startup it looks for variables named `CLAUDE_PLUGIN_OPTION_*`:
+
+- **Present → plugin mode.** Claude Code started it from the plugin and passed the plugin settings. The server uses only these values; provider credentials and `X402_*` settings already in the environment are ignored.
+- **Absent → npm / standalone mode** (`npx agentpay402-mcp`, or any MCP client). The server reads the ordinary environment variables: `WALLET_PROVIDER`, the provider keys, and the `X402_*` settings listed in [`.env.example`](.env.example) and [`server.json`](server.json).
+
+`check_sign_in_status` shows where each spending setting came from.
 
 The plugin starts the server with `node ${CLAUDE_PLUGIN_ROOT}/dist/index.js`. `dist/` is the plain `tsc` output of `src/` (not bundled or minified).
 
 ## Provider setup
 
-With the plugin, enter these in the plugin settings. Without the plugin, the server reads the same values from environment variables, listed in [`.env.example`](.env.example).
+With the plugin, enter these in the plugin settings. Without the plugin, set the same values as environment variables in your MCP client's config, listed in [`.env.example`](.env.example).
 
 ### cdp (Coinbase Developer Platform)
 
@@ -87,7 +96,7 @@ The accounts (EVM and Solana) are created automatically on first use, named `CDP
 | `PRIVY_SOLANA_WALLET_ID` (optional) | Create with `privy-create-wallet solana` |
 
 ```bash
-PRIVY_APP_ID=... PRIVY_APP_SECRET=... npx -y x402-wallet-mcp privy-create-wallet ethereum
+PRIVY_APP_ID=... PRIVY_APP_SECRET=... npx -y agentpay402-mcp privy-create-wallet ethereum
 ```
 
 If the wallet has an owner (authorization key), also set `PRIVY_AUTHORIZATION_PRIVATE_KEY`. Signing uses `createX402Client` from `@privy-io/node/x402`.
@@ -97,11 +106,11 @@ If the wallet has an owner (authorization key), also set `PRIVY_AUTHORIZATION_PR
 | Variable | Where to get it |
 | - | - |
 | `CROSSMINT_SERVER_API_KEY` (alias `CROSSMINT_API_KEY`) | Server-side key from the [Crossmint Staging Console → API Keys](https://staging.crossmint.com/console/projects/apiKeys) (`sk_staging_...`; staging keys have all scopes enabled). For production, use the [Production Console](https://www.crossmint.com/console/projects/apiKeys) |
-| `CROSSMINT_SIGNER_SECRET` | Generate with `npx -y x402-wallet-mcp crossmint-gen-secret` (32 random bytes, generated locally and never sent to Crossmint) |
-| `CROSSMINT_WALLET_ADDRESS` | Create with `npx -y x402-wallet-mcp crossmint-create-wallet` (a smart wallet with the server signer as its recovery method) |
+| `CROSSMINT_SIGNER_SECRET` | Generate with `npx -y agentpay402-mcp crossmint-gen-secret` (32 random bytes, generated locally and never sent to Crossmint) |
+| `CROSSMINT_WALLET_ADDRESS` | Create with `npx -y agentpay402-mcp crossmint-create-wallet` (a smart wallet with the server signer as its recovery method) |
 
 A staging key only works with `network: "testnet"` (Base Sepolia), and a production key only with `"mainnet"` (Base). On staging,
-`npx -y x402-wallet-mcp crossmint-staging-fund 5` mints test USDXM, but most x402 sellers on Base Sepolia want USDC, so fund USDC from the Circle faucet. Signing uses a custom signer (`ExactEvmScheme`) that delegates `signTypedData` to the Crossmint wallet.
+`npx -y agentpay402-mcp crossmint-staging-fund 5` mints test USDXM, but most x402 sellers on Base Sepolia want USDC, so fund USDC from the Circle faucet. Signing uses a custom signer (`ExactEvmScheme`) that delegates `signTypedData` to the Crossmint wallet.
 
 ### Nevermined (optional extra scheme)
 
@@ -205,9 +214,24 @@ This plugin runs on your computer. It has no server of its own, collects no anal
 
 Questions: open an issue at https://github.com/kato9292929/x402-wallet-mcp/issues.
 
-## Without the plugin
+## Without the plugin (npm, other MCP clients)
 
-The same server also runs as a plain stdio MCP server in other clients, configured with environment variables instead of plugin settings.
+The same server runs as a plain stdio MCP server in any MCP client: `npx -y agentpay402-mcp`, published on npm and in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.kato9292929/agentpay402-mcp) as `io.github.kato9292929/agentpay402-mcp`. Configure it with environment variables instead of plugin settings:
+
+| Variable | Meaning | Default |
+| - | - | - |
+| `WALLET_PROVIDER` | `cdp`, `privy`, `crossmint` or `none` (discovery and checking only) | — (required) |
+| `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET` | for `cdp` | — |
+| `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `PRIVY_WALLET_ID` | for `privy` | — |
+| `CROSSMINT_SERVER_API_KEY`, `CROSSMINT_SIGNER_SECRET`, `CROSSMINT_WALLET_ADDRESS` | for `crossmint` | — |
+| `NVM_API_KEY` | optional, Nevermined credit plans | — |
+| `X402_NETWORK` | `testnet` or `mainnet` | `testnet` |
+| `X402_PER_CALL_MAX_USD`, `X402_PER_SESSION_MAX_USD` | spending limits | `0.10`, `1.00` |
+| `X402_ALLOWED_HOSTS` | comma-separated hosts; empty = all | empty |
+| `X402_PROBE_MODE`, `X402_PRICE_MISMATCH` | `block` / `warn` / `off` | `block`, `warn` |
+| `X402_RETRY_WITH_RECEIPT`, `X402_REPORT_TO_PROBE` | `true` / `false` | `true`, `false` |
+
+`~/.x402-wallet-mcp/config.json`, when present, still overrides the `X402_*` values.
 
 ### MCP client configuration
 
@@ -237,7 +261,7 @@ The examples use CDP; swap the `env` for other providers.
 #### Claude Code
 
 ```bash
-claude mcp add x402-wallet -e WALLET_PROVIDER=cdp -e CDP_API_KEY_ID=... -e CDP_API_KEY_SECRET=... -e CDP_WALLET_SECRET=... -- npx -y x402-wallet-mcp
+claude mcp add x402-wallet -e WALLET_PROVIDER=cdp -e CDP_API_KEY_ID=... -e CDP_API_KEY_SECRET=... -e CDP_WALLET_SECRET=... -- npx -y agentpay402-mcp
 ```
 
 Or in `.mcp.json`:
@@ -291,14 +315,14 @@ CDP_WALLET_SECRET = "..."
 Helper commands that are not exposed as MCP tools.
 
 ```bash
-npx -y x402-wallet-mcp status                       # provider readiness
-npx -y x402-wallet-mcp check <url> [method] [json]  # inspect a 402 (does not pay)
-npx -y x402-wallet-mcp check-seller <url> [method] [json]  # pre-payment checks (does not pay)
-npx -y x402-wallet-mcp pay <url> [method] [json]    # pay once, within the limits
-npx -y x402-wallet-mcp privy-create-wallet [ethereum|solana]
-npx -y x402-wallet-mcp crossmint-gen-secret
-npx -y x402-wallet-mcp crossmint-create-wallet [alias]
-npx -y x402-wallet-mcp crossmint-staging-fund [amount]
+npx -y agentpay402-mcp status                       # provider readiness
+npx -y agentpay402-mcp check <url> [method] [json]  # inspect a 402 (does not pay)
+npx -y agentpay402-mcp check-seller <url> [method] [json]  # pre-payment checks (does not pay)
+npx -y agentpay402-mcp pay <url> [method] [json]    # pay once, within the limits
+npx -y agentpay402-mcp privy-create-wallet [ethereum|solana]
+npx -y agentpay402-mcp crossmint-gen-secret
+npx -y agentpay402-mcp crossmint-create-wallet [alias]
+npx -y agentpay402-mcp crossmint-staging-fund [amount]
 ```
 
 ## Development
