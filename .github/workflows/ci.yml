@@ -35,6 +35,9 @@ jobs:
             if (p.mcpName !== s.name) bad.push("mcpName != server.json name");
             if (s.version !== p.version || s.packages[0].version !== p.version) bad.push("server.json version != package.json version");
             if (s.packages[0].identifier !== p.name) bad.push("server.json identifier != package name");
-            if (m.version !== p.version) bad.push("plugin.json version != package.json version");
+            if (m.version !== p.version) bad.push(".claude-plugin/plugin.json version != package.json version");
+            const a = require("./plugin.json"), j = require("./mcp.json");
+            if (a.version !== p.version) bad.push("plugin.json version != package.json version");
+            if (!j.mcpServers.agentpay402.args.includes(`agentpay402-mcp@${p.version}`)) bad.push("mcp.json does not pin agentpay402-mcp@" + p.version);
             if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
           '

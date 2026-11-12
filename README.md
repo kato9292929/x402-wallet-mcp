@@ -427,6 +427,10 @@ To test the Nevermined scheme without a public seller, `scripts/nvm-sandbox-sell
 
 The integration test defaults to a $0.001 Base Sepolia endpoint from the Bazaar, and refuses to run unless `config.json` is set to `testnet`. Get test USDC from the [Circle faucet](https://faucet.circle.com/) (Base Sepolia / Solana Devnet).
 
+### Releasing
+
+Set the new version in `package.json`, `server.json` (two places), `.claude-plugin/plugin.json`, `plugin.json`, the `agentpay402-mcp@<version>` pin in `mcp.json` and `VERSION` in `src/server.ts`, then merge to `main`. The Publish workflow sees that `v<version>` is not tagged yet, publishes to npm and the MCP Registry, and creates the tag. CI fails if the versions disagree.
+
 ## License
 
 MIT
