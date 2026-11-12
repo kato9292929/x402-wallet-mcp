@@ -214,6 +214,95 @@ This plugin runs on your computer. It has no server of its own, collects no anal
 
 Questions: open an issue at https://github.com/kato9292929/x402-wallet-mcp/issues.
 
+## Other agent clients (Agent Plugins 1.0)
+
+The repository is also an [Agent Plugins 1.0](https://agent-plugins.org/specification) package: `plugin.json` and `mcp.json` at the root (the Claude Code files under `.claude-plugin/` are separate and unaffected), plus a Codex marketplace file at `.agents/plugins/marketplace.json`. The plugin's `mcp.json` starts the server from npm as `npx -y agentpay402-mcp@<version>`, so the client does not need to install dependencies.
+
+Agent Plugins has no way to pass settings or secrets to a plugin's server, so a server started from the plugin runs **without a wallet** (`WALLET_PROVIDER=none`): discovery and checking tools work, payments do not. To pay, register the server once more in the client's own MCP settings with your keys, using the client's secret mechanism below. Use the variable names from [Without the plugin](#without-the-plugin-npm-other-mcp-clients).
+
+### Codex CLI
+
+Install ([Codex plugins](https://developers.openai.com/codex/plugins/build)):
+
+```bash
+codex plugin marketplace add kato9292929/x402-wallet-mcp
+```
+
+```bash
+codex plugin add agentpay402-mcp@x402inc
+```
+
+To pay, add a server to `~/.codex/config.toml` that forwards the keys you export in your shell ([`env_vars`](https://developers.openai.com/codex/mcp)); Codex does not pass environment variables to a plugin's server ([openai/codex#24401](https://github.com/openai/codex/issues/24401)):
+
+```toml
+[mcp_servers.agentpay402]
+command = "npx"
+args = ["-y", "agentpay402-mcp"]
+env_vars = ["WALLET_PROVIDER", "CDP_API_KEY_ID", "CDP_API_KEY_SECRET", "CDP_WALLET_SECRET", "X402_NETWORK"]
+```
+
+### Cursor
+
+Install the plugin from Cursor's plugin UI or [cursor.directory](https://cursor.directory) ([Cursor plugins](https://cursor.com/docs/plugins)). To pay, add the server to `~/.cursor/mcp.json` and read the keys from your environment with `${env:NAME}`, or from a file with `envFile` ([Cursor MCP](https://cursor.com/docs/mcp)):
+
+```json
+{
+  "mcpServers": {
+    "agentpay402": {
+      "command": "npx",
+      "args": ["-y", "agentpay402-mcp"],
+      "env": {
+        "WALLET_PROVIDER": "cdp",
+        "CDP_API_KEY_ID": "${env:CDP_API_KEY_ID}",
+        "CDP_API_KEY_SECRET": "${env:CDP_API_KEY_SECRET}",
+        "CDP_WALLET_SECRET": "${env:CDP_WALLET_SECRET}"
+      }
+    }
+  }
+}
+```
+
+### VS Code (Copilot agent mode)
+
+Enable `chat.plugins.enabled`, then run **Chat: Install Plugin from Source** with `https://github.com/kato9292929/x402-wallet-mcp` ([Agent plugins in VS Code](https://code.visualstudio.com/docs/agent-customization/agent-plugins)). To pay, add the server to `.vscode/mcp.json` with password inputs, which VS Code prompts for and stores securely ([MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)):
+
+```json
+{
+  "inputs": [
+    { "type": "promptString", "id": "cdp-key-id", "description": "CDP API key ID", "password": true },
+    { "type": "promptString", "id": "cdp-key-secret", "description": "CDP API key secret", "password": true },
+    { "type": "promptString", "id": "cdp-wallet-secret", "description": "CDP wallet secret", "password": true }
+  ],
+  "servers": {
+    "agentpay402": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "agentpay402-mcp"],
+      "env": {
+        "WALLET_PROVIDER": "cdp",
+        "CDP_API_KEY_ID": "${input:cdp-key-id}",
+        "CDP_API_KEY_SECRET": "${input:cdp-key-secret}",
+        "CDP_WALLET_SECRET": "${input:cdp-wallet-secret}"
+      }
+    }
+  }
+}
+```
+
+### GitHub Copilot CLI
+
+Install ([CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)):
+
+```bash
+copilot plugin install kato9292929/x402-wallet-mcp
+```
+
+Copilot CLI passes only `PATH` to MCP servers, so set the keys on a server entry ([Add MCP servers](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers)); this writes `~/.copilot/mcp-config.json`:
+
+```bash
+copilot mcp add agentpay402 --env WALLET_PROVIDER=cdp --env CDP_API_KEY_ID=... --env CDP_API_KEY_SECRET=... --env CDP_WALLET_SECRET=... -- npx -y agentpay402-mcp
+```
+
 ## Without the plugin (npm, other MCP clients)
 
 The same server runs as a plain stdio MCP server in any MCP client: `npx -y agentpay402-mcp`, published on npm and in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.kato9292929/agentpay402-mcp) as `io.github.kato9292929/agentpay402-mcp`. Configure it with environment variables instead of plugin settings:

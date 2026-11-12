@@ -59,13 +59,13 @@ const NO_WALLET =
   "No wallet is configured (WALLET_PROVIDER=none). Set WALLET_PROVIDER to cdp, privy or crossmint with its credentials.";
 
 const requestShape = {
-  url: z.string().url().describe("Full URL of the x402-protected endpoint"),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]).optional().describe("HTTP method (default GET)"),
-  headers: z.record(z.string(), z.string()).optional().describe("Extra request headers"),
+  url: z.string().url().describe("Full https URL of the x402 endpoint, including any query parameters the service requires"),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]).optional().describe("HTTP method to call the endpoint with; use the method the service documents (default GET)"),
+  headers: z.record(z.string(), z.string()).optional().describe("Extra request headers to send, e.g. {\"accept\": \"application/json\"}; payment headers are added automatically"),
   body: z
     .union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())])
     .optional()
-    .describe("Request body. Objects/arrays are sent as JSON."),
+    .describe("Request body for POST/PUT/PATCH; objects and arrays are sent as JSON with content-type application/json"),
 };
 
 export interface ServerOptions {
@@ -107,7 +107,10 @@ export function createServer(opts: ServerOptions): McpServer {
     "get_wallet_address",
     {
       title: "Get wallet address",
-      description: "Returns the wallet address for each chain the configured wallet provider supports.",
+      description:
+        "Returns the address of the configured wallet on each chain it can pay on (CAIP-2 ids such as eip155:84532 for Base Sepolia). " +
+        "Use it to tell the user where to send funds or which address will appear as the payer. Read-only: looks the address up with the " +
+        "wallet provider and moves no money. Fails with a clear message when no wallet is configured (WALLET_PROVIDER=none).",
       inputSchema: { chain: chainArg },
       annotations: { readOnlyHint: true },
     },
@@ -125,7 +128,10 @@ export function createServer(opts: ServerOptions): McpServer {
     "get_wallet_balance",
     {
       title: "Get wallet balance",
-      description: "Shows the wallet's USDC balance on every supported chain (plus other tokens the provider reports).",
+      description:
+        "Returns the wallet's USDC balance on each supported chain (and other tokens the provider reports, e.g. USDXM on Crossmint staging), " +
+        "read directly from chain RPCs. Use it before paying to confirm there are funds, or after paying to see the result. " +
+        "Read-only: never moves money. Pass `chain` to check one chain only.",
       inputSchema: { chain: chainArg },
       annotations: { readOnlyHint: true },
     },
@@ -160,8 +166,9 @@ export function createServer(opts: ServerOptions): McpServer {
     {
       title: "Show wallet (funding info)",
       description:
-        "Text replacement for the wallet UI: deposit address and chain for funding, faucet/onramp links, and the current " +
-        "spending limits. Limits can only be changed by the wallet owner in the config file.",
+        "Text stand-in for a wallet app: for each chain, the deposit address, faucet or onramp hints for adding funds, and which spending " +
+        "controls are in force (limit values are never shown). Use it when the user needs to fund the wallet or asks how payments are limited. " +
+        "Read-only. Agents cannot change limits, transfer funds or start an onramp; only the wallet owner can.",
       inputSchema: { chain: chainArg },
       annotations: { readOnlyHint: true },
     },
@@ -188,7 +195,9 @@ export function createServer(opts: ServerOptions): McpServer {
     {
       title: "Check sign-in status",
       description:
-        "Checks whether the wallet provider's credentials are configured and can sign, and explains what is missing if not.",
+        "Checks whether the configured wallet provider's credentials are present and accepted, which chains it can pay on, whether Nevermined " +
+        "credits are configured, and where each spending setting comes from. Call it first in a session, or whenever a payment tool reports a " +
+        "configuration problem; when not ready it says exactly what the owner must set. Read-only.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -226,13 +235,16 @@ export function createServer(opts: ServerOptions): McpServer {
     {
       title: "List Bazaar resources",
       description:
-        "Discovers x402 services in the CDP Bazaar. With `query` (or filters) it runs a ranked search; without, it lists the catalog page by page.",
+        "Finds paid x402 APIs in the public CDP Bazaar catalog. With `query` (and optional network / price filters) it runs a ranked search; " +
+        "without arguments it lists the catalog page by page. Returns each resource's URL, description, HTTP method and prices per network. " +
+        "Use it to discover services; then use get_resource_details for one entry, check_seller before buying, and make_x402_request to pay. " +
+        "Read-only, no authentication, nothing is paid.",
       inputSchema: {
         query: z.string().optional().describe('Natural-language search, e.g. "weather forecast"'),
         network: z.string().optional().describe('Filter by network, e.g. "eip155:84532" for Base Sepolia'),
         maxUsdPrice: z.string().optional().describe('Maximum price in USD, e.g. "0.05"'),
-        limit: z.number().int().min(1).max(100).optional().describe("Max results (search returns at most 20)"),
-        offset: z.number().int().min(0).optional().describe("Offset when listing without a query"),
+        limit: z.number().int().min(1).max(100).optional().describe("Maximum number of results (1-100; a search returns at most 20)"),
+        offset: z.number().int().min(0).optional().describe("Number of entries to skip when paging through the catalog without a query"),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -243,8 +255,11 @@ export function createServer(opts: ServerOptions): McpServer {
     "get_resource_details",
     {
       title: "Get resource details",
-      description: "Full Bazaar record for one service: accepted payment options, price, description and input/output schema.",
-      inputSchema: { resource: z.string().url().describe("The resource URL from list_bazaar_resources") },
+      description:
+        "Returns the full Bazaar record for one resource URL: every accepted payment option with its USD price, the description, and the " +
+        "input/output schema (required query or body fields). Use it after list_bazaar_resources to learn how to call a service correctly. " +
+        "Read-only, nothing is paid. If the URL is not in the Bazaar it says so; use check_payment_requirements to read the price from the endpoint itself.",
+      inputSchema: { resource: z.string().url().describe("The resource URL exactly as returned by list_bazaar_resources") },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async ({ resource }) => run(() => getResourceDetails(resource, opts.fetch)),
@@ -255,9 +270,12 @@ export function createServer(opts: ServerOptions): McpServer {
     {
       title: "Make an x402 request",
       description:
-        "Calls a URL. If it answers HTTP 402, pays with the configured wallet (USDC `exact`) or Nevermined credits " +
-        "(`nvm:erc4337`), within the owner's per-call / per-session limits and host allowlist, then retries and returns " +
-        "the response with the settlement receipt. Over-limit requests are not paid.",
+        "Calls a URL and, if it answers HTTP 402, pays for it with the configured wallet (USDC, x402 `exact`) or Nevermined credits, then returns " +
+        "the response. THIS SPENDS MONEY. Before signing it checks the owner's host allowlist, per-call and per-session limits, the seller's Seller Probe " +
+        "record, required input, the Bazaar price and remembered refusals, and stops without paying if any check fails (status `blocked` with a reason). " +
+        "After paying it confirms the transfer on chain and, if the seller did not deliver, refetches once with the same payment when the seller supports " +
+        "Delivery Receipts. Returns status, body, tx, settlement, body hash, receipt and probe result. Never re-sends a payment whose outcome is unknown. " +
+        "Use check_seller or check_payment_requirements first when unsure.",
       inputSchema: requestShape,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
@@ -274,7 +292,10 @@ export function createServer(opts: ServerOptions): McpServer {
     "check_payment_requirements",
     {
       title: "Check payment requirements",
-      description: "Calls a URL without paying and returns its 402 payment options, which one would be paid, and whether it fits the limits.",
+      description:
+        "Calls a URL without paying and returns its HTTP 402 payment options (scheme, network, price, asset, pay-to), which option this wallet " +
+        "would pay, and whether that payment fits the owner's limits. Use it to quote a price before deciding to buy. Sends one unpaid request " +
+        "to the seller; nothing is signed or paid.",
       inputSchema: requestShape,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -286,9 +307,10 @@ export function createServer(opts: ServerOptions): McpServer {
     {
       title: "Check seller",
       description:
-        "Checks a seller without paying: its Seller Probe record, the 402's payment options, missing required input, " +
-        "the difference from the Bazaar price, recent payment refusals remembered for this host, and whether it supports " +
-        "Delivery Receipts (refetch after a failed delivery).",
+        "Runs every pre-payment check of make_x402_request without paying: the seller's Seller Probe record, the 402's payment options, required " +
+        "input missing from the request, the difference from the Bazaar price, payment refusals remembered for this host, and whether the seller " +
+        "supports Delivery Receipts. Use it before buying from an unfamiliar seller. Sends one unpaid request plus a Seller Probe lookup; nothing " +
+        "is signed or paid.",
       inputSchema: requestShape,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agentpay402-mcp",
+  "version": "0.4.0",
+  "description": "AgentPay402 MCP: discover, check and pay for x402 APIs with your own CDP, Privy or Crossmint wallet (USDC on Base and Solana), with Seller Probe checks before paying, on-chain payment proof after, and Delivery Receipt refetch.",
+  "author": {
+    "name": "x402 Inc.",
+    "url": "https://github.com/kato9292929"
+  },
+  "homepage": "https://github.com/kato9292929/x402-wallet-mcp#readme",
+  "repository": "https://github.com/kato9292929/x402-wallet-mcp",
+  "license": "MIT",
+  "keywords": ["x402", "payments", "usdc", "wallet", "mcp"]
+}
