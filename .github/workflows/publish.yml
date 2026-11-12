@@ -1,18 +1,22 @@
 # Publishes a release to npm and to the official MCP Registry when a version tag
-# (v1.2.3) is pushed. Follows https://modelcontextprotocol.io/registry/github-actions.md
-# (OIDC authentication for the registry; NPM_TOKEN secret for npm).
+# (v1.2.3) is pushed, or when run by hand from the Actions tab / API
+# (workflow_dispatch on main: publishes the version in package.json and then
+# creates the v<version> tag). Follows
+# https://modelcontextprotocol.io/registry/github-actions.md (OIDC authentication
+# for the registry; NPM_TOKEN secret for npm).
 name: Publish
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       id-token: write # MCP Registry OIDC login and npm provenance
-      contents: read
+      contents: write # create the version tag on manual runs
     env:
       MCP_PUBLISHER_VERSION: v1.8.1
     steps:
@@ -27,9 +31,21 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      - name: Tag matches package.json, server.json and plugin.json
+      - name: Version to publish
+        id: ver
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            if [ "${GITHUB_REF_NAME}" != "main" ]; then echo "Manual runs publish from main only"; exit 1; fi
+            V="$(node -p 'require("./package.json").version')"
+            if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then echo "Tag v$V already exists"; exit 1; fi
+            echo "version=$V" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Version matches package.json, server.json and plugin.json
+        run: |
+          TAG="${{ steps.ver.outputs.version }}"
           node -e '
             const t = process.argv[1], p = require("./package.json"), s = require("./server.json"), m = require("./.claude-plugin/plugin.json");
             for (const [k, v] of [["package.json", p.version], ["server.json", s.version], ["server.json package", s.packages[0].version], ["plugin.json", m.version]])
@@ -66,3 +82,9 @@ jobs:
 
       - name: Publish server to MCP Registry
         run: ./mcp-publisher publish
+
+      - name: Create the version tag (manual runs)
+        if: github.ref_type != 'tag'
+        run: |
+          git tag "v${{ steps.ver.outputs.version }}" "$GITHUB_SHA"
+          git push origin "v${{ steps.ver.outputs.version }}"
