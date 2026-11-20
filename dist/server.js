@@ -50,7 +50,7 @@ async function run(fn) {
         return fail(err);
     }
 }
-const NO_WALLET = "No wallet is configured (WALLET_PROVIDER=none). Set WALLET_PROVIDER to cdp, privy or crossmint with its credentials.";
+const NO_WALLET = "No wallet is configured (WALLET_PROVIDER=none). Set WALLET_PROVIDER to cdp, privy or crossmint with its credentials, or browser with your wallet address.";
 const requestShape = {
     url: z.string().url().describe("Full https URL of the x402 endpoint, including any query parameters the service requires"),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]).optional().describe("HTTP method to call the endpoint with; use the method the service documents (default GET)"),

@@ -7,15 +7,16 @@ const CDP_ENV = ["CDP_API_KEY_ID", "CDP_API_KEY_SECRET", "CDP_WALLET_SECRET"];
 const PRIVY_ENV = ["PRIVY_APP_ID", "PRIVY_APP_SECRET"];
 const CROSSMINT_ENV = ["CROSSMINT_SERVER_API_KEY", "CROSSMINT_SIGNER_SECRET", "CROSSMINT_WALLET_ADDRESS"];
 export * from "./types.js";
-export const PROVIDER_IDS = ["cdp", "privy", "crossmint"];
+export const PROVIDER_IDS = ["cdp", "privy", "crossmint", "browser"];
 export const SETUP_HELP = `agentpay402-mcp: WALLET_PROVIDER is not set.
 
-Set WALLET_PROVIDER to one of: cdp | privy | crossmint
+Set WALLET_PROVIDER to one of: cdp | privy | crossmint | browser
 (or "none" to run only the discovery tools without a wallet).
 
   cdp        ${CDP_ENV.join(", ")}
   privy      ${PRIVY_ENV.join(", ")}, PRIVY_WALLET_ID and/or PRIVY_SOLANA_WALLET_ID
   crossmint  ${CROSSMINT_ENV.join(", ")} (CROSSMINT_API_KEY is accepted for the key)
+  browser    BROWSER_WALLET_ADDRESS (your Rabby / MetaMask address; every payment is approved in the browser)
 
 Optional: NVM_API_KEY (Nevermined credits), SCHEME_PRIORITY (default "exact,nvm:erc4337").
 Spending limits live in ~/.x402-wallet-mcp/config.json.
@@ -40,6 +41,8 @@ export async function providerFromEnv(mode) {
             return new (await import("./privy.js")).PrivyProvider(mode);
         case "crossmint":
             return new (await import("./crossmint.js")).CrossmintProvider(mode);
+        case "browser":
+            return new (await import("./browser.js")).BrowserWalletProvider(mode);
         default:
             throw new Error(`Unknown WALLET_PROVIDER "${id}".\n\n${SETUP_HELP}`);
     }
