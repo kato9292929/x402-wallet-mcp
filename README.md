@@ -1,6 +1,6 @@
 # AgentPay402 MCP
 
-A Claude Code plugin that lets Claude **discover, check and pay for** [x402](https://x402.org) APIs with your own wallet (CDP, Privy, Crossmint, or your browser wallet such as Rabby or MetaMask; USDC on Base and Solana, plus Nevermined credits). Before paying it checks the seller; after paying it confirms the transfer on chain and the delivery.
+A Claude Code plugin that lets Claude **discover, check and pay for** [x402](https://x402.org) APIs with your own wallet (CDP, Privy, Crossmint, or your own browser wallet: Phantom, Rabby or MetaMask; USDC on Base and Solana, plus Nevermined credits). Before paying it checks the seller; after paying it confirms the transfer on chain and the delivery.
 
 ## Install
 
@@ -24,7 +24,7 @@ To update: `claude plugin marketplace update x402inc`.
 | CDP API key ID / secret, CDP wallet secret | for `cdp` | — |
 | Privy app ID / secret, Privy wallet ID | for `privy` | — |
 | Crossmint server API key / signer secret / wallet address | for `crossmint` | — |
-| Browser wallet address | for `browser`: your Rabby / MetaMask address | — |
+| Phantom address (Solana) / Browser wallet address (Base) | for `browser`: set one or both | — |
 | Nevermined API key | optional, Nevermined credit plans | — |
 | Network | `testnet` or `mainnet` | `testnet` |
 | Per-call / per-session limit (USD) | spending limits | `0.10` / `1.00` |
@@ -38,7 +38,7 @@ Only the keys of the provider you choose need values.
 
 ### Where to get the keys
 
-- **browser** (Base only, no keys): enter your Rabby / MetaMask address. Each payment opens a page in your browser showing the amount, recipient and API; you sign it with your wallet or reject it. Nothing is paid without your signature, and the plugin never holds your key. The spending limits still apply before the page opens.
+- **browser** (no keys): enter your Phantom address to pay on Solana, and/or your Rabby / MetaMask address to pay on Base. Each payment opens a page in your browser showing the amount, recipient and API; you approve it in Phantom (or sign it in Rabby / MetaMask) or reject it. On `testnet`, turn on testnet mode in Phantom so it previews the payment correctly. Nothing is paid without your signature, and the plugin never holds your key. The spending limits still apply before the page opens.
 - **cdp**: API key ID and secret from [CDP Portal → API Keys](https://portal.cdp.coinbase.com/api-keys/secret); wallet secret from [Wallets → Non-custodial → Security](https://portal.cdp.coinbase.com/wallets/non-custodial/security). Accounts are created on first use.
 - **privy**: app ID and secret from [Privy Dashboard → App settings → Basics](https://dashboard.privy.io/apps?page=settings&tab=basics). Create the wallet with `privy-create-wallet ethereum` (see [Helper commands](#helper-commands)).
 - **crossmint** (Base only): server API key from the [Crossmint Console](https://staging.crossmint.com/console/projects/apiKeys) (`sk_staging_...` works only with `testnet`, `sk_production_...` only with `mainnet`). Create the signer secret and wallet with `crossmint-gen-secret` and `crossmint-create-wallet`.

@@ -502,7 +502,7 @@ export class X402Requester {
     // 7. sign; record the payer key before sending
     const started = Date.now();
     if (selected.scheme === NVM_SCHEME) return this.payNevermined(input, cfg, selected, probeOut, warnings);
-    this.deps.provider?.beforeSign?.({ url: input.url });
+    this.deps.provider?.beforeSign?.({ url: input.url, network: selected.network, amount: selected.amount, payTo: selected.payTo });
     let payment: ExactPayment;
     try {
       payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });

@@ -1,11 +1,29 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createPublicKey, randomBytes, verify } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { getAddress, getTypesForEIP712Domain, isAddress, recoverTypedDataAddress, serializeTypedData } from "viem";
-import { evmUsdcBalance, testnetFundingNotes } from "../balance.js";
-import { BASE, BASE_SEPOLIA, CHAINS, type NetworkMode } from "../chains.js";
-import { ProviderConfigError, assertChain, type EvmSigner, type FundingInfo, type WalletProvider } from "./types.js";
+import {
+  address as solAddress,
+  getBase58Decoder,
+  getBase58Encoder,
+  getBase64Decoder,
+  getCompiledTransactionMessageDecoder,
+  getTransactionEncoder,
+  type Transaction,
+} from "@solana/kit";
+import { onchainUsdcBalance, testnetFundingNotes } from "../balance.js";
+import { BASE, BASE_SEPOLIA, CHAINS, SOLANA, SOLANA_DEVNET, type NetworkMode } from "../chains.js";
+import {
+  ProviderConfigError,
+  assertChain,
+  type EvmSigner,
+  type FundingInfo,
+  type SolanaSigner,
+  type WalletProvider,
+} from "./types.js";
 
 /**
  * Pays with the user's own browser wallet (Rabby, MetaMask, Coinbase Wallet extension, ...).
@@ -13,10 +31,11 @@ import { ProviderConfigError, assertChain, type EvmSigner, type FundingInfo, typ
  * Every payment is approved by a person: when a payment needs signing, the server opens a page on
  * 127.0.0.1 in the browser; the user checks the amount and recipient there and signs with their
  * wallet, or rejects. Nothing is signed without that click, and no key is held by this server.
- * Base / Base Sepolia only.
+ * EVM (Base) is signed with an injected EVM wallet; Solana with Phantom (or any wallet that
+ * injects `window.phantom.solana` / `window.solana`).
  */
 
-export const BROWSER_ENV = ["BROWSER_WALLET_ADDRESS"];
+export const BROWSER_ENV = ["BROWSER_WALLET_ADDRESS", "BROWSER_SOLANA_ADDRESS"];
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 
 export class ApprovalError extends Error {
@@ -28,11 +47,22 @@ export class ApprovalError extends Error {
 
 type TypedData = Parameters<EvmSigner["signTypedData"]>[0];
 
+export interface PaymentInfo {
+  url: string;
+  network?: string;
+  amount?: string;
+  payTo?: string;
+}
+
+type Request =
+  | { family: "evm"; typedData: TypedData }
+  | { family: "solana"; wireTx: string; messageBytes: Uint8Array; chain: string };
+
 interface Pending {
   token: string;
-  typedData: TypedData;
-  url?: string;
-  resolve(sig: `0x${string}`): void;
+  req: Request;
+  info?: PaymentInfo;
+  resolve(sig: string): void;
   reject(err: Error): void;
 }
 
@@ -56,7 +86,7 @@ export class BrowserWalletProvider implements WalletProvider {
   readonly id = "browser" as const;
   private server?: Promise<{ server: Server; port: number }>;
   private readonly pending = new Map<string, Pending>();
-  private nextUrl?: string;
+  private nextInfo?: PaymentInfo;
 
   constructor(
     private readonly mode: NetworkMode,
@@ -64,23 +94,36 @@ export class BrowserWalletProvider implements WalletProvider {
   ) {}
 
   chains(): string[] {
-    return [this.mode === "testnet" ? BASE_SEPOLIA : BASE];
+    const out: string[] = [];
+    if (process.env.BROWSER_WALLET_ADDRESS?.trim()) out.push(this.mode === "testnet" ? BASE_SEPOLIA : BASE);
+    if (process.env.BROWSER_SOLANA_ADDRESS?.trim()) out.push(this.mode === "testnet" ? SOLANA_DEVNET : SOLANA);
+    return out;
   }
 
-  private configuredAddress(): `0x${string}` {
+  private evmAddress(): `0x${string}` {
     const a = process.env.BROWSER_WALLET_ADDRESS?.trim();
-    if (!a) throw new ProviderConfigError("Missing BROWSER_WALLET_ADDRESS (your browser wallet's address on Base).");
+    if (!a) throw new ProviderConfigError("Missing BROWSER_WALLET_ADDRESS (your Rabby / MetaMask address on Base).");
     if (!isAddress(a)) throw new ProviderConfigError("BROWSER_WALLET_ADDRESS is not a valid EVM address.");
     return getAddress(a);
   }
 
+  private solanaAddress(): string {
+    const a = process.env.BROWSER_SOLANA_ADDRESS?.trim();
+    if (!a) throw new ProviderConfigError("Missing BROWSER_SOLANA_ADDRESS (your Phantom address).");
+    try {
+      return solAddress(a);
+    } catch {
+      throw new ProviderConfigError("BROWSER_SOLANA_ADDRESS is not a valid Solana address.");
+    }
+  }
+
   async address(chain: string): Promise<string> {
     assertChain(this, chain);
-    return this.configuredAddress();
+    return CHAINS[chain].family === "solana" ? this.solanaAddress() : this.evmAddress();
   }
 
   async usdcBalance(chain: string): Promise<string> {
-    return evmUsdcBalance(chain, await this.address(chain));
+    return onchainUsdcBalance(chain, await this.address(chain));
   }
 
   async fundingInfo(chain: string): Promise<FundingInfo> {
@@ -89,24 +132,69 @@ export class BrowserWalletProvider implements WalletProvider {
 
   async ready(): Promise<{ ok: boolean; reason?: string }> {
     try {
-      this.configuredAddress();
+      if (!this.chains().length) {
+        throw new ProviderConfigError("Set BROWSER_SOLANA_ADDRESS (Phantom) and/or BROWSER_WALLET_ADDRESS (Rabby / MetaMask).");
+      }
+      if (process.env.BROWSER_WALLET_ADDRESS?.trim()) this.evmAddress();
+      if (process.env.BROWSER_SOLANA_ADDRESS?.trim()) this.solanaAddress();
       return { ok: true };
     } catch (err) {
       return { ok: false, reason: (err as Error).message };
     }
   }
 
-  /** Called before signing so the approval page can show which URL is being paid. */
-  beforeSign(info: { url: string }): void {
-    this.nextUrl = info.url;
+  /** Called before signing so the approval page can show what is being paid. */
+  beforeSign(info: PaymentInfo): void {
+    this.nextInfo = info;
   }
 
   async evmSigner(): Promise<EvmSigner> {
-    const address = this.configuredAddress();
+    const address = this.evmAddress();
     return {
       address,
-      signTypedData: (typedData) => this.requestApproval(address, typedData),
+      signTypedData: async (typedData) => {
+        const sig = await this.requestApproval({ family: "evm", typedData });
+        const recovered = await recoverTypedDataAddress({ ...(typedData as any), signature: sig as `0x${string}` });
+        if (getAddress(recovered) !== address) {
+          throw new ApprovalError(`The payment was signed by ${recovered}, not ${address}. Nothing was paid.`);
+        }
+        return sig as `0x${string}`;
+      },
     };
+  }
+
+  async solanaSigner(): Promise<SolanaSigner> {
+    const addr = this.solanaAddress();
+    const chain = this.mode === "testnet" ? SOLANA_DEVNET : SOLANA;
+    const pubkey = createPublicKey({
+      key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(getBase58Encoder().encode(addr))]),
+      format: "der",
+      type: "spki",
+    });
+    const signOne = async (tx: Transaction) => {
+      const wireTx = getBase64Decoder().decode(getTransactionEncoder().encode(tx));
+      const sigB58 = await this.requestApproval({ family: "solana", wireTx, messageBytes: new Uint8Array(tx.messageBytes), chain });
+      let sig: Uint8Array;
+      try {
+        sig = new Uint8Array(getBase58Encoder().encode(sigB58));
+      } catch {
+        throw new ApprovalError("The wallet returned an unreadable signature. Nothing was paid.");
+      }
+      if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), pubkey, sig)) {
+        throw new ApprovalError(
+          `The signature does not match this payment from ${addr} (the wallet may have changed the transaction). Nothing was paid.`,
+        );
+      }
+      return { [addr]: sig };
+    };
+    return {
+      address: addr,
+      signTransactions: async (txs: readonly Transaction[]) => {
+        const out = [];
+        for (const tx of txs) out.push(await signOne(tx));
+        return out;
+      },
+    } as unknown as SolanaSigner;
   }
 
   /** Stops the local approval server (tests). */
@@ -117,15 +205,15 @@ export class BrowserWalletProvider implements WalletProvider {
     this.server = undefined;
   }
 
-  private async requestApproval(address: `0x${string}`, typedData: TypedData): Promise<`0x${string}`> {
+  private async requestApproval(req: Request): Promise<string> {
     const { port } = await this.startServer();
     const id = randomBytes(8).toString("hex");
     const token = randomBytes(16).toString("hex");
     const pageUrl = `http://127.0.0.1:${port}/approve/${id}?t=${token}`;
-    const url = this.nextUrl;
-    this.nextUrl = undefined;
+    const info = this.nextInfo;
+    this.nextInfo = undefined;
 
-    const signature = new Promise<`0x${string}`>((resolve, reject) => {
+    const signature = new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new ApprovalError("The payment was not approved in time. Nothing was signed or paid."));
@@ -136,8 +224,8 @@ export class BrowserWalletProvider implements WalletProvider {
       };
       this.pending.set(id, {
         token,
-        typedData,
-        url,
+        req,
+        info,
         resolve: (s) => (done(), resolve(s)),
         reject: (e) => (done(), reject(e)),
       });
@@ -145,13 +233,7 @@ export class BrowserWalletProvider implements WalletProvider {
 
     process.stderr.write(`agentpay402-mcp: approve the payment in your browser wallet: ${pageUrl}\n`);
     (this.opts.open ?? openInBrowser)(pageUrl);
-
-    const sig = await signature;
-    const recovered = await recoverTypedDataAddress({ ...(typedData as any), signature: sig });
-    if (getAddress(recovered) !== address) {
-      throw new ApprovalError(`The payment was signed by ${recovered}, not ${address}. Nothing was paid.`);
-    }
-    return sig;
+    return signature;
   }
 
   private startServer(): Promise<{ server: Server; port: number }> {
@@ -169,6 +251,9 @@ export class BrowserWalletProvider implements WalletProvider {
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const u = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (req.method === "GET" && u.pathname === "/solana-web3.js") {
+      return send(res, 200, "text/javascript; charset=utf-8", await solanaWeb3Script());
+    }
     const m = /^\/approve\/([0-9a-f]{16})$/.exec(u.pathname);
     const p = m ? this.pending.get(m[1]) : undefined;
 
@@ -184,10 +269,10 @@ export class BrowserWalletProvider implements WalletProvider {
         p.reject(new ApprovalError("You rejected the payment. Nothing was signed or paid."));
         return send(res, 200, "application/json", JSON.stringify({ ok: true }));
       }
-      if (!body.signature || !/^0x[0-9a-fA-F]+$/.test(body.signature)) {
+      if (!body.signature || !/^(0x[0-9a-fA-F]+|[1-9A-HJ-NP-Za-km-z]+)$/.test(body.signature)) {
         return send(res, 400, "application/json", JSON.stringify({ ok: false, error: "no signature" }));
       }
-      p.resolve(body.signature as `0x${string}`);
+      p.resolve(body.signature);
       return send(res, 200, "application/json", JSON.stringify({ ok: true }));
     }
 
@@ -195,26 +280,66 @@ export class BrowserWalletProvider implements WalletProvider {
   }
 
   private pageData(p: Pending) {
-    const td = p.typedData;
+    const info = p.info;
+    if (p.req.family === "solana") {
+      const chain = CHAINS[p.req.chain];
+      return {
+        family: "solana" as const,
+        token: p.token,
+        address: this.solanaAddress(),
+        url: info?.url ?? null,
+        chainName: chain.name,
+        testnet: chain.testnet,
+        to: info?.payTo ?? null,
+        amount: transferAmount(p.req.messageBytes) ?? (info?.amount ? formatUsdc(BigInt(info.amount)) : null),
+        wireTx: p.req.wireTx,
+      };
+    }
+    const td = p.req.typedData;
     const chainId = Number((td.domain as { chainId?: number | bigint }).chainId);
-    const chain = Object.entries(CHAINS).find(([caip]) => caip === `eip155:${chainId}`);
-    const msg = td.message as { from?: string; to?: string; value?: bigint | string };
-    const value = msg.value !== undefined ? BigInt(msg.value) : undefined;
+    const chain = CHAINS[`eip155:${chainId}`];
+    const msg = td.message as { to?: string; value?: bigint | string };
     return {
+      family: "evm" as const,
       token: p.token,
-      address: this.configuredAddress(),
-      url: p.url ?? null,
+      address: this.evmAddress(),
+      url: info?.url ?? null,
       chainId,
-      chainName: chain?.[1].name ?? `chain ${chainId}`,
-      testnet: chain?.[1].testnet ?? false,
+      chainName: chain?.name ?? `chain ${chainId}`,
+      testnet: chain?.testnet ?? false,
       to: msg.to ?? null,
-      amount: value !== undefined ? formatUsdc(value) : null,
+      amount: msg.value !== undefined ? formatUsdc(BigInt(msg.value)) : null,
       typedData: serializeTypedData({
         ...(td as any),
         types: { EIP712Domain: getTypesForEIP712Domain({ domain: td.domain as any }), ...(td.types as any) },
       }),
     };
   }
+}
+
+/** Amount of the SPL `TransferChecked` instruction in a payment transaction, as USDC. */
+function transferAmount(messageBytes: Uint8Array): string | null {
+  try {
+    const msg = getCompiledTransactionMessageDecoder().decode(messageBytes) as { instructions: { data?: Uint8Array }[] };
+    for (const ix of msg.instructions) {
+      const d = ix.data;
+      if (d && d.length === 10 && d[0] === 12) {
+        return formatUsdc(new DataView(d.buffer, d.byteOffset, d.length).getBigUint64(1, true));
+      }
+    }
+  } catch {
+    // fall back to the 402's amount
+  }
+  return null;
+}
+
+let web3Script: Promise<string> | undefined;
+function solanaWeb3Script(): Promise<string> {
+  web3Script ??= readFile(
+    createRequire(import.meta.url).resolve("@solana/web3.js").replace(/lib[\\/].*$/, "lib/index.iife.min.js"),
+    "utf8",
+  );
+  return web3Script;
 }
 
 function formatUsdc(v: bigint): string {
@@ -263,7 +388,8 @@ const CHAIN_PARAMS: Record<number, unknown> = {
 };
 
 function approvalPage(d: ReturnType<BrowserWalletProvider["pageData"]>): string {
-  const json = JSON.stringify({ ...d, chainParams: CHAIN_PARAMS[d.chainId] ?? null }).replace(/</g, "\\u003c");
+  const chainParams = d.family === "evm" ? (CHAIN_PARAMS[d.chainId] ?? null) : null;
+  const json = JSON.stringify({ ...d, chainParams }).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgentPay402 支払いの承認</title>
@@ -284,8 +410,10 @@ button{font-size:16px;padding:10px 20px;border-radius:8px;border:1px solid #888;
 <dt>払う財布</dt><dd id="from"></dd>
 </dl>
 <p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>
+<p id="devnet" class="warn" hidden>Phantom の設定で「テストネット」を有効にしておくと、内容の確認が正しく出ます。</p>
 <p><button id="approve">ウォレットで署名する</button><button id="reject">拒否する</button></p>
 <p id="msg"></p>
+${d.family === "solana" ? '<script src="/solana-web3.js"></script>' : ""}
 <script>
 const d = ${json};
 const $ = (id) => document.getElementById(id);
@@ -295,6 +423,7 @@ $("url").textContent = d.url || "不明";
 $("chain").textContent = d.chainName;
 $("from").textContent = d.address;
 $("testnet").hidden = !d.testnet;
+$("devnet").hidden = !(d.testnet && d.family === "solana");
 const msg = (t) => ($("msg").textContent = t);
 const finish = (t) => { msg(t); $("approve").disabled = $("reject").disabled = true; };
 async function post(body) {
@@ -302,7 +431,39 @@ async function post(body) {
   return r.json();
 }
 $("reject").onclick = async () => { await post({ reject: true }); finish("拒否しました。支払いはしていません。このタブは閉じてかまいません。"); };
+async function signSolana() {
+  const sol = (window.phantom && window.phantom.solana) || window.solana;
+  if (!sol) return msg("Phantom が見つかりません。");
+  msg("Phantom を確認しています…");
+  const { publicKey } = await sol.connect();
+  if (publicKey.toString() !== d.address) return msg("Phantom で " + d.address + " を選んでから、もう一度押してください。");
+  const bytes = Uint8Array.from(atob(d.wireTx), (c) => c.charCodeAt(0));
+  const tx = solanaWeb3.VersionedTransaction.deserialize(bytes);
+  msg("Phantom で承認してください…");
+  const signed = await sol.signTransaction(tx);
+  const keys = signed.message.staticAccountKeys;
+  const i = keys.findIndex((k) => k.toString() === d.address);
+  if (i < 0 || !signed.signatures[i]) return msg("署名が見つかりません。");
+  return b58(signed.signatures[i]);
+}
+function b58(bytes) {
+  const A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b);
+  let s = ""; while (n > 0n) { s = A[Number(n % 58n)] + s; n /= 58n; }
+  for (const b of bytes) { if (b === 0) s = "1" + s; else break; }
+  return s;
+}
 $("approve").onclick = async () => {
+  if (d.family === "solana") {
+    try {
+      const signature = await signSolana();
+      if (!signature) return;
+      const r = await post({ signature });
+      if (r.ok) finish("署名しました。Claude に戻ってください。このタブは閉じてかまいません。");
+      else finish("このリンクは期限切れです。");
+    } catch (e) { msg("署名されませんでした：" + (e && e.message ? e.message : e)); }
+    return;
+  }
   const eth = window.ethereum;
   if (!eth) return msg("ブラウザのウォレット（Rabby、MetaMask など）が見つかりません。");
   try {
