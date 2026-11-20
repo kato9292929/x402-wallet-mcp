@@ -85,7 +85,8 @@ export type BlockedReason =
   | "over_cap"
   | "price_mismatch"
   | "network_avoided"
-  | "host_not_allowed";
+  | "host_not_allowed"
+  | "not_approved";
 
 function buildInit(input: HttpRequestInput, extraHeaders: Record<string, string> = {}): RequestInit {
   const method = (input.method ?? "GET").toUpperCase();
@@ -501,7 +502,14 @@ export class X402Requester {
     // 7. sign; record the payer key before sending
     const started = Date.now();
     if (selected.scheme === NVM_SCHEME) return this.payNevermined(input, cfg, selected, probeOut, warnings);
-    const payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
+    this.deps.provider?.beforeSign?.({ url: input.url });
+    let payment: ExactPayment;
+    try {
+      payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
+    } catch (err) {
+      if ((err as Error).name === "ApprovalError") return this.blocked(input, "not_approved", (err as Error).message, { probe: probeOut });
+      throw err;
+    }
     let payerKey: PayerKey | null = null;
     try {
       const payerAddress = this.deps.provider ? await this.deps.provider.address(selected.network) : "";

@@ -407,7 +407,16 @@ export class X402Requester {
         const started = Date.now();
         if (selected.scheme === NVM_SCHEME)
             return this.payNevermined(input, cfg, selected, probeOut, warnings);
-        const payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
+        this.deps.provider?.beforeSign?.({ url: input.url });
+        let payment;
+        try {
+            payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
+        }
+        catch (err) {
+            if (err.name === "ApprovalError")
+                return this.blocked(input, "not_approved", err.message, { probe: probeOut });
+            throw err;
+        }
         let payerKey = null;
         try {
             const payerAddress = this.deps.provider ? await this.deps.provider.address(selected.network) : "";

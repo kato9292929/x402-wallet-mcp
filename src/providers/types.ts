@@ -2,7 +2,7 @@ import type { x402Client } from "@x402/core/client";
 import type { ClientEvmSigner } from "@x402/evm";
 import type { ClientSvmSigner } from "@x402/svm";
 
-export type ProviderId = "cdp" | "privy" | "crossmint";
+export type ProviderId = "cdp" | "privy" | "crossmint" | "browser";
 
 export type EvmSigner = ClientEvmSigner;
 export type SolanaSigner = ClientSvmSigner;
@@ -40,6 +40,8 @@ export interface WalletProvider {
   evmSigner?(): Promise<EvmSigner>;
   solanaSigner?(): Promise<SolanaSigner>;
   x402Client?(): Promise<x402Client>;
+  /** Called right before a payment is signed, with the URL being paid. */
+  beforeSign?(info: { url: string }): void;
 }
 
 export class ProviderConfigError extends Error {
