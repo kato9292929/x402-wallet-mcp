@@ -3,9 +3,12 @@
 #    (merging a version bump releases it; other pushes to main do nothing),
 #  - on a pushed version tag (v1.2.3),
 #  - or when run by hand from the Actions tab (workflow_dispatch on main).
-# Runs from main create the v<version> tag after publishing. Follows
-# https://modelcontextprotocol.io/registry/github-actions.md (OIDC authentication
-# for the registry; NPM_TOKEN secret for npm).
+# Runs from main create the v<version> tag after publishing. Both npm and the MCP
+# Registry are authenticated with GitHub OIDC: npm through Trusted publishing
+# (https://docs.npmjs.com/trusted-publishers), the registry as in
+# https://modelcontextprotocol.io/registry/github-actions.md. No long-lived tokens.
+# If the version is already on npm (e.g. a staged version approved by hand), the
+# npm step is skipped and the run continues with the registry and the tag.
 name: Publish
 
 on:
@@ -22,7 +25,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # MCP Registry OIDC login and npm provenance
+      id-token: write # npm Trusted publishing, provenance and MCP Registry OIDC login
       contents: write # create the version tag on manual runs
     env:
       MCP_PUBLISHER_VERSION: v1.8.1
@@ -53,6 +56,10 @@ jobs:
           node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
 
+      - name: npm CLI with Trusted publishing support (11.5.1 or later)
+        if: steps.ver.outputs.publish == 'true'
+        run: npm install -g npm@11 && npm --version
+
       - if: steps.ver.outputs.publish == 'true'
         run: npm ci
       - if: steps.ver.outputs.publish == 'true'
@@ -70,11 +77,21 @@ jobs:
               if (v !== t) { console.error(`${k} is ${v}, release is ${t}`); process.exit(1); }
           ' "${{ steps.ver.outputs.version }}"
 
-      - name: Publish package to npm
+      - name: Is this version already on npm?
+        id: npm
         if: steps.ver.outputs.publish == 'true'
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          if [ "$(npm view "agentpay402-mcp@$V" version 2>/dev/null)" = "$V" ]; then
+            echo "agentpay402-mcp@$V is already on npm; skipping npm publish."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish package to npm (Trusted publishing)
+        if: steps.ver.outputs.publish == 'true' && steps.npm.outputs.exists != 'true'
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install cosign
         if: steps.ver.outputs.publish == 'true'
