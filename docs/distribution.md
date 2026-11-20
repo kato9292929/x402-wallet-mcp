@@ -15,7 +15,7 @@ Common facts:
 
 ## 1. Official MCP Registry and npm
 
-Published by `.github/workflows/publish.yml` when a `v*` tag is pushed: `npm publish` (needs the `NPM_TOKEN` repository secret), then `mcp-publisher login github-oidc` + `mcp-publisher publish` (GitHub OIDC; no device code or token needed for the `io.github.kato9292929/` namespace).
+Published by `.github/workflows/publish.yml` when a version that has no `v<version>` tag yet reaches `main` (or a `v*` tag is pushed): `npm publish` (needs the `NPM_TOKEN` repository secret until npm Trusted publishing is set up), then `mcp-publisher login github-oidc` + `mcp-publisher publish` (GitHub OIDC; no device code or token needed for the `io.github.kato9292929/` namespace), then the `v<version>` tag is created.
 
 Check after publishing:
 
