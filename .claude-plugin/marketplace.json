@@ -10,6 +10,14 @@
       "name": "agentpay402-mcp",
       "source": "./",
       "description": "AgentPay402 MCP: discover, check and pay for x402 APIs from Claude Code with your own CDP, Privy or Crossmint wallet, plus Nevermined credits."
+    },
+    {
+      "name": "x402-security-check",
+      "source": {
+        "source": "github",
+        "repo": "kato9292929/x402-security-check"
+      },
+      "description": "x402 Security Check: checks an x402 seller's API server code on 11 items (402 contents, payment order, facilitator results, SDK advisories), with read-only MCP tools for evidence."
     }
   ]
 }

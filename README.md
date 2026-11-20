@@ -34,7 +34,7 @@ It exposes the 8 tools of Coinbase's Payments MCP plus `check_seller`, and the w
 
 ## Setup
 
-This repository is its own plugin marketplace (`x402inc`, in `.claude-plugin/marketplace.json`) and lists one plugin, `agentpay402-mcp`, at the repository root. Claude Code installs the plugin's npm dependencies from `package-lock.json` when you install it.
+This repository is its own plugin marketplace (`x402inc`, in `.claude-plugin/marketplace.json`). It lists `agentpay402-mcp`, at the repository root, and the seller-side [`x402-security-check`](https://github.com/kato9292929/x402-security-check) (`claude plugin install x402-security-check@x402inc`), which lives in its own repository. Claude Code installs the plugin's npm dependencies from `package-lock.json` when you install it.
 
 1. Add the marketplace and install the plugin with the two commands under [Install](#install). Inside a Claude Code session, `/plugin marketplace add kato9292929/x402-wallet-mcp` and `/plugin install agentpay402-mcp@x402inc` do the same.
 2. Claude Code asks for the plugin settings (or run `/plugin configure agentpay402-mcp@x402inc`). Credentials are stored in your system's secure credential store, not in `settings.json`.
