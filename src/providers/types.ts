@@ -41,7 +41,7 @@ export interface WalletProvider {
   solanaSigner?(): Promise<SolanaSigner>;
   x402Client?(): Promise<x402Client>;
   /** Called right before a payment is signed, with the URL being paid. */
-  beforeSign?(info: { url: string; network?: string; amount?: string; payTo?: string }): void;
+  beforeSign?(info: { url: string; network?: string; amount?: string; payTo?: string }): void | Promise<void>;
 }
 
 export class ProviderConfigError extends Error {
