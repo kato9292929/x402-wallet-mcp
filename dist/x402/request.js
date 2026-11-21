@@ -407,9 +407,9 @@ export class X402Requester {
         const started = Date.now();
         if (selected.scheme === NVM_SCHEME)
             return this.payNevermined(input, cfg, selected, probeOut, warnings);
-        this.deps.provider?.beforeSign?.({ url: input.url });
         let payment;
         try {
+            await this.deps.provider?.beforeSign?.({ url: input.url, network: selected.network, amount: selected.amount, payTo: selected.payTo });
             payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
         }
         catch (err) {
