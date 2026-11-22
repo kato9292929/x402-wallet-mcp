@@ -12,7 +12,11 @@ export class SpendLimitError extends Error {
  * at zero each time the MCP server process starts.
  */
 export class SpendGuard {
-    spentMicros = 0n;
+    spentMicros;
+    /** `alreadySpentMicros`: what has been spent before this guard started (the remote server's 24-hour total). */
+    constructor(alreadySpentMicros = 0n) {
+        this.spentMicros = alreadySpentMicros;
+    }
     get sessionSpentMicros() {
         return this.spentMicros;
     }
