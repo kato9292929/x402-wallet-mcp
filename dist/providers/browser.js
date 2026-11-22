@@ -383,38 +383,64 @@ function approvalPage(d) {
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgentPay402 支払いの承認</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:520px;margin:40px auto;padding:0 16px;color:#111;background:#fff}
-h1{font-size:20px}dl{display:grid;grid-template-columns:7em 1fr;gap:8px 12px}dt{color:#666}dd{margin:0;word-break:break-all}
-.amount{font-size:28px;font-weight:700}.warn{background:#fff4d6;padding:8px 12px;border-radius:6px}
-button{font-size:16px;padding:10px 20px;border-radius:8px;border:1px solid #888;background:#fff;cursor:pointer;margin-right:8px}
-#approve{background:#111;color:#fff;border-color:#111}#msg{margin-top:16px;font-weight:600}
+:root{--bg:#131313;--card:#1c1c1c;--row:#262626;--line:#333;--text:#fff;--sub:#999;--accent:#ab9ff2;--accent-ink:#1c1c1c;--warn:#ffd27a}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--text);
+font-family:Inter,-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.card{width:100%;max-width:400px;background:var(--card);border-radius:24px;padding:24px 20px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--sub)}
+.brand i{width:22px;height:22px;border-radius:7px;background:var(--accent);display:inline-block}
+.site{margin:22px 0 6px;text-align:center}
+.host{display:inline-block;padding:6px 14px;border-radius:999px;background:var(--row);font-size:14px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lead{color:var(--sub);font-size:13px;text-align:center;margin:10px 0 0}
+.amount{text-align:center;margin:18px 0 22px}
+.amount b{display:block;font-size:40px;font-weight:700;letter-spacing:-.02em}
+.amount span{color:var(--sub);font-size:14px}
+.rows{background:var(--row);border-radius:14px;overflow:hidden}
+.r{display:flex;justify-content:space-between;gap:12px;padding:13px 14px;font-size:14px}
+.r+.r{border-top:1px solid var(--line)}
+.r dt{color:var(--sub);margin:0}.r dd{margin:0;text-align:right;font-weight:500;word-break:break-all}
+.warn{margin:12px 0 0;padding:10px 14px;border-radius:12px;background:rgba(255,210,122,.1);color:var(--warn);font-size:13px}
+.btns{display:flex;gap:10px;margin-top:20px}
+button{flex:1;font:inherit;font-size:16px;font-weight:600;padding:14px;border-radius:14px;border:0;cursor:pointer;transition:opacity .15s}
+#reject{background:#333;color:var(--text)}#approve{background:var(--accent);color:var(--accent-ink)}
+button:hover{opacity:.9}button:disabled{opacity:.4;cursor:default}
+#msg{min-height:20px;margin:14px 0 0;text-align:center;font-size:14px;color:var(--sub)}
+#msg.ok{color:#4ade80}#msg.err{color:#ff8a8a}
 </style></head><body>
-<h1>AgentPay402：支払いの承認</h1>
-<p>Claude がこの支払いをしようとしています。内容を確かめて、よければウォレットで署名してください。</p>
-<dl>
-<dt>金額</dt><dd class="amount" id="amount"></dd>
-<dt>支払い先</dt><dd id="to"></dd>
-<dt>API</dt><dd id="url"></dd>
-<dt>ネットワーク</dt><dd id="chain"></dd>
-<dt>払う財布</dt><dd id="from"></dd>
+<main class="card">
+<div class="brand"><i></i>AgentPay402</div>
+<div class="site"><span class="host" id="host"></span></div>
+<p class="lead">Claude がこの API に支払おうとしています</p>
+<div class="amount"><b id="amount"></b><span id="chain"></span></div>
+<dl class="rows">
+<div class="r"><dt>支払い先</dt><dd id="to"></dd></div>
+<div class="r"><dt>払う財布</dt><dd id="from"></dd></div>
+<div class="r"><dt>API</dt><dd id="url"></dd></div>
 </dl>
 <p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>
 <p id="devnet" class="warn" hidden>Phantom の設定で「テストネット」を有効にしておくと、内容の確認が正しく出ます。</p>
-<p><button id="approve">ウォレットで署名する</button><button id="reject">拒否する</button></p>
+<div class="btns"><button id="reject">拒否</button><button id="approve">承認する</button></div>
 <p id="msg"></p>
+</main>
 ${d.family === "solana" ? '<script src="/solana-web3.js"></script>' : ""}
 <script>
 const d = ${json};
 const $ = (id) => document.getElementById(id);
-$("amount").textContent = d.amount ? d.amount + " USDC" : "不明";
-$("to").textContent = d.to || "不明";
-$("url").textContent = d.url || "不明";
-$("chain").textContent = d.chainName;
-$("from").textContent = d.address;
+const short = (a) => (a && a.length > 16 ? a.slice(0, 6) + "…" + a.slice(-6) : a || "不明");
+const setFull = (id, text, full) => { $(id).textContent = text; if (full) $(id).title = full; };
+let host = "";
+try { host = d.url ? new URL(d.url).host : ""; } catch {}
+$("host").textContent = host || "x402 API";
+$("amount").textContent = d.amount ? d.amount + " USDC" : "金額不明";
+$("chain").textContent = d.chainName + " で支払い";
+setFull("to", short(d.to), d.to);
+setFull("from", short(d.address), d.address);
+setFull("url", d.url ? new URL(d.url).pathname : "不明", d.url);
 $("testnet").hidden = !d.testnet;
 $("devnet").hidden = !(d.testnet && d.family === "solana");
-const msg = (t) => ($("msg").textContent = t);
-const finish = (t) => { msg(t); $("approve").disabled = $("reject").disabled = true; };
+const msg = (t, cls = "") => { $("msg").textContent = t; $("msg").className = cls; };
+const finish = (t, cls = "ok") => { msg(t, cls); $("approve").disabled = $("reject").disabled = true; };
 async function post(body) {
   const r = await fetch(location.pathname, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: d.token, ...body }) });
   return r.json();
@@ -463,7 +489,7 @@ async function connectEvm() {
   }
   return (req) => eth.request({ method: "eth_signTypedData_v4", params: [acct, req.typedData] });
 }
-$("reject").onclick = async () => { await post({ action: "reject" }); finish("拒否しました。支払いはしていません。このタブは閉じてかまいません。"); };
+$("reject").onclick = async () => { await post({ action: "reject" }); finish("拒否しました。支払いはしていません。このタブは閉じてかまいません。", ""); };
 $("approve").onclick = async () => {
   $("approve").disabled = true;
   try {
@@ -476,10 +502,10 @@ $("approve").onclick = async () => {
     const signature = await sign(req);
     const r = await post({ action: "signature", signature });
     if (r.ok) finish("署名しました。Claude に戻ってください。このタブは閉じてかまいません。");
-    else finish("このリンクは期限切れです。");
+    else finish("このリンクは期限切れです。", "err");
   } catch (e) {
     $("approve").disabled = false;
-    msg("署名されませんでした：" + (e && e.message ? e.message : e));
+    msg("署名されませんでした：" + (e && e.message ? e.message : e), "err");
   }
 };
 </script></body></html>`;
