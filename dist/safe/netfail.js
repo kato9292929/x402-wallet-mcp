@@ -17,7 +17,7 @@ export function netFailuresPath() {
 export async function readNetFailures(file = netFailuresPath()) {
     let text;
     try {
-        text = await fs.readFile(file, "utf8");
+        text = await fs.readFile(/*turbopackIgnore: true*/ file, "utf8");
     }
     catch {
         return [];
@@ -49,8 +49,8 @@ export function activeRefusals(refusals, host, probeLastPaidTs = null, now = Dat
 }
 export async function recordNetFailure(host, network, reason, file = netFailuresPath()) {
     try {
-        await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-        await fs.appendFile(file, JSON.stringify({ ts: new Date().toISOString(), host, network, reason }) + "\n", { mode: 0o600 });
+        await fs.mkdir(/*turbopackIgnore: true*/ path.dirname(file), { recursive: true, mode: 0o700 });
+        await fs.appendFile(/*turbopackIgnore: true*/ file, JSON.stringify({ ts: new Date().toISOString(), host, network, reason }) + "\n", { mode: 0o600 });
     }
     catch {
         // the memory is best effort; never break a payment result on it

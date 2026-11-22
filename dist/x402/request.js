@@ -155,7 +155,7 @@ export class X402Requester {
         return p;
     }
     async refusalsFor(host, probe) {
-        const all = await readNetFailures(this.deps.netFailuresFile ?? netFailuresPath());
+        const all = this.deps.netFailures ? await this.deps.netFailures.read(host) : await readNetFailures(this.deps.netFailuresFile ?? netFailuresPath());
         const lastPaid = probe?.status === "scored" ? (probe.last_paid?.ts ?? null) : null;
         return activeRefusals(all, host, lastPaid);
     }
@@ -305,7 +305,35 @@ export class X402Requester {
      * make_x402_request. Stops before signing on any blocking condition; after paying, decides
      * whether money moved from the chain (the seller's settlement header is only a hint).
      */
+    /**
+     * make_x402_request: prepare (checks), sign, pay. Stops before signing on any blocking
+     * condition; after paying, decides whether money moved from the chain.
+     */
     async request(input) {
+        const prep = await this.prepare(input);
+        if (prep.kind === "result")
+            return prep.result;
+        const { cfg, selected, probeOut, warnings } = prep;
+        if (selected.scheme === NVM_SCHEME)
+            return this.payNevermined(input, cfg, selected, probeOut, warnings);
+        let payment;
+        try {
+            await this.deps.provider?.beforeSign?.({ url: input.url, network: selected.network, amount: selected.amount, payTo: selected.payTo });
+            payment = await this.exactPayment({ ...prep.rawPaymentRequired, accepts: [selected.raw] });
+        }
+        catch (err) {
+            if (err.name === "ApprovalError")
+                return this.blocked(input, "not_approved", err.message, { probe: probeOut });
+            throw err;
+        }
+        return this.payPrepared(prep, payment);
+    }
+    /**
+     * Steps 1-6: every check before signing. Returns either a final result (blocked, or the
+     * endpoint did not ask for payment) or the selected payment option, ready to sign.
+     */
+    async prepare(input) {
+        const done = (result) => ({ kind: "result", result });
         // 1. config, allowed hosts
         const cfg = await this.loadCfg();
         const host = probeHost(input.url) ?? new URL(input.url).hostname;
@@ -313,7 +341,7 @@ export class X402Requester {
             this.deps.guard.checkHost(cfg, input.url);
         }
         catch (err) {
-            return this.blocked(input, "host_not_allowed", err.message);
+            return done(this.blocked(input, "host_not_allowed", err.message));
         }
         // 2. Seller Probe
         const probe = await this.probeLookup(cfg, input.url);
@@ -322,14 +350,14 @@ export class X402Requester {
         if (probe?.status === "scored" && probe.verdict === "not_delivered") {
             const msg = `Seller Probe's latest paid purchase from ${host} was paid but not delivered (${probe.last_paid?.ts ?? "date unknown"}).`;
             if (cfg.probeMode === "block")
-                return this.blocked(input, "probe_not_delivered", `${msg} Payment was not made.`, { probe: probeOut });
+                return done(this.blocked(input, "probe_not_delivered", `${msg} Payment was not made.`, { probe: probeOut }));
             warnings.push(msg);
         }
         // 3. request, expect 402
         const first = await this.probe(input);
         if (first.status !== 402) {
             const body = await readBody(first.response);
-            return {
+            return done({
                 url: input.url,
                 status: (first.response.ok ? "fulfilled" : "rejected_by_seller"),
                 http_status: first.status,
@@ -346,7 +374,7 @@ export class X402Requester {
                 probe: probeOut,
                 warnings: warnings.length ? warnings : undefined,
                 note: "The endpoint did not ask for payment (no HTTP 402); nothing was paid.",
-            };
+            });
         }
         if (!first.paymentRequired) {
             throw new PaymentError(first.mpp
@@ -360,10 +388,10 @@ export class X402Requester {
             warnings.push(`The 402 shows example input this request does not set (${inputCheck.unsetExamples.join(", ")}); it is not marked required, so the payment was not stopped.`);
         }
         if (!inputCheck.ok) {
-            return this.blocked(input, "missing_input", `The 402 declares input this request does not carry: ${inputCheck.missing.join("; ")}. Payment was not made.`, {
+            return done(this.blocked(input, "missing_input", `The 402 declares input this request does not carry: ${inputCheck.missing.join("; ")}. Payment was not made.`, {
                 missing: inputCheck.missing,
                 probe: probeOut,
-            });
+            }));
         }
         // 6 (selection). (host, network) refusals: never pick a network refused recently.
         const refusals = await this.refusalsFor(host, probe);
@@ -372,10 +400,10 @@ export class X402Requester {
         const selected = selectRequirement(pr.accepts, ctx);
         if (!selected) {
             if (evaluated.some((c) => c.avoided)) {
-                return this.blocked(input, "network_avoided", "Every payable network for this seller refused a payment recently. Payment was not made.", {
+                return done(this.blocked(input, "network_avoided", "Every payable network for this seller refused a payment recently. Payment was not made.", {
                     refusals: refusals.map((r) => ({ network: r.network, at: r.ts })),
                     probe: probeOut,
-                });
+                }));
             }
             throw new PaymentError("None of the payment options offered by the endpoint can be paid by this wallet.", {
                 accepts: evaluated.map((c) => ({ ...describeRequirement(c.requirement), reason: c.reason })),
@@ -385,38 +413,31 @@ export class X402Requester {
         let priceCheck;
         if (selected.scheme !== NVM_SCHEME) {
             if (selected.priceMicros === undefined) {
-                return this.blocked(input, "over_cap", "Price could not be converted to USD; refusing to pay.", { probe: probeOut });
+                return done(this.blocked(input, "over_cap", "Price could not be converted to USD; refusing to pay.", { probe: probeOut }));
             }
             try {
                 this.deps.guard.checkAmount(cfg, selected.priceMicros);
             }
             catch (err) {
-                return this.blocked(input, "over_cap", err.message, { code: err.code, probe: probeOut });
+                return done(this.blocked(input, "over_cap", err.message, { code: err.code, probe: probeOut }));
             }
             if (cfg.priceMismatch !== "off") {
                 priceCheck = this.priceCheck(await this.bazaarPrice(input.url, selected.network), selected);
                 if (priceCheck.matches === false) {
                     const msg = `The 402 asks ${selected.amount} but the Bazaar lists ${priceCheck.listed} (atomic USDC on ${selected.network}).`;
                     if (cfg.priceMismatch === "block")
-                        return this.blocked(input, "price_mismatch", `${msg} Payment was not made.`, { price_check: priceCheck, probe: probeOut });
+                        return done(this.blocked(input, "price_mismatch", `${msg} Payment was not made.`, { price_check: priceCheck, probe: probeOut }));
                     warnings.push(msg);
                 }
             }
         }
-        // 7. sign; record the payer key before sending
+        return { kind: "ready", input, cfg, host, rawPaymentRequired: pr.raw, selected, probeOut, warnings, priceCheck };
+    }
+    /** Steps 7-10 for a signed exact-scheme payment: send it, then let the chain decide whether money moved. */
+    async payPrepared(prep, payment) {
+        const { input, cfg, host, selected, probeOut, priceCheck } = prep;
+        const warnings = [...prep.warnings];
         const started = Date.now();
-        if (selected.scheme === NVM_SCHEME)
-            return this.payNevermined(input, cfg, selected, probeOut, warnings);
-        let payment;
-        try {
-            await this.deps.provider?.beforeSign?.({ url: input.url, network: selected.network, amount: selected.amount, payTo: selected.payTo });
-            payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
-        }
-        catch (err) {
-            if (err.name === "ApprovalError")
-                return this.blocked(input, "not_approved", err.message, { probe: probeOut });
-            throw err;
-        }
         let payerKey = null;
         try {
             const payerAddress = this.deps.provider ? await this.deps.provider.address(selected.network) : "";
@@ -507,7 +528,11 @@ export class X402Requester {
         else if (chain.settlement === "not_found") {
             status = "rejected_by_seller";
             this.deps.guard.release(reserved);
-            await recordNetFailure(host, selected.network, `HTTP ${res.status} after payment, no transfer`, this.deps.netFailuresFile ?? netFailuresPath());
+            const reason = `HTTP ${res.status} after payment, no transfer`;
+            if (this.deps.netFailures)
+                await this.deps.netFailures.record(host, selected.network, reason);
+            else
+                await recordNetFailure(host, selected.network, reason, this.deps.netFailuresFile ?? netFailuresPath());
         }
         else {
             // Could not tell whether money moved: not re-sent, kept counted.

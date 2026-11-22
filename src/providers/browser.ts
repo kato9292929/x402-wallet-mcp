@@ -88,7 +88,7 @@ export function openInBrowser(url: string): void {
   const [cmd, args] =
     process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
   try {
-    spawn(cmd, args, { detached: true, stdio: "ignore" }).on("error", () => {}).unref();
+    spawn(/*turbopackIgnore: true*/ cmd, args, { detached: true, stdio: "ignore" }).on("error", () => {}).unref();
   } catch {
     // The URL is also written to stderr.
   }
@@ -433,31 +433,8 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-const CHAIN_PARAMS: Record<number, unknown> = {
-  8453: {
-    chainId: "0x2105",
-    chainName: "Base",
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: ["https://mainnet.base.org"],
-    blockExplorerUrls: ["https://basescan.org"],
-  },
-  84532: {
-    chainId: "0x14a34",
-    chainName: "Base Sepolia",
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: ["https://sepolia.base.org"],
-    blockExplorerUrls: ["https://sepolia.basescan.org"],
-  },
-};
-
-function approvalPage(d: ReturnType<BrowserWalletProvider["pageData"]>): string {
-  const chainParams = d.chainId ? (CHAIN_PARAMS[d.chainId] ?? null) : null;
-  const json = JSON.stringify({ ...d, chainParams }).replace(/</g, "\\u003c");
-  return `<!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentPay402 支払いの承認</title>
-<style>
-:root{--bg:#131313;--card:#1c1c1c;--row:#262626;--line:#333;--text:#fff;--sub:#999;--accent:#ab9ff2;--accent-ink:#1c1c1c;--warn:#ffd27a}
+/** The approval page style, shared with the remote server's page. */
+export const APPROVAL_CSS = `:root{--bg:#131313;--card:#1c1c1c;--row:#262626;--line:#333;--text:#fff;--sub:#999;--accent:#ab9ff2;--accent-ink:#1c1c1c;--warn:#ffd27a}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--text);
 font-family:Inter,-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -481,7 +458,33 @@ button{flex:1;font:inherit;font-size:16px;font-weight:600;padding:14px;border-ra
 button:hover{opacity:.9}button:disabled{opacity:.4;cursor:default}
 #msg{min-height:20px;margin:14px 0 0;text-align:center;font-size:14px;color:var(--sub)}
 #msg.ok{color:#4ade80}#msg.err{color:#ff8a8a}
-</style></head><body>
+`;
+
+export const CHAIN_PARAMS: Record<number, unknown> = {
+  8453: {
+    chainId: "0x2105",
+    chainName: "Base",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://mainnet.base.org"],
+    blockExplorerUrls: ["https://basescan.org"],
+  },
+  84532: {
+    chainId: "0x14a34",
+    chainName: "Base Sepolia",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://sepolia.base.org"],
+    blockExplorerUrls: ["https://sepolia.basescan.org"],
+  },
+};
+
+function approvalPage(d: ReturnType<BrowserWalletProvider["pageData"]>): string {
+  const chainParams = d.chainId ? (CHAIN_PARAMS[d.chainId] ?? null) : null;
+  const json = JSON.stringify({ ...d, chainParams }).replace(/</g, "\\u003c");
+  return `<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentPay402 支払いの承認</title>
+<style>
+${APPROVAL_CSS}</style></head><body>
 <main class="card">
 <div class="brand"><i></i>AgentPay402</div>
 <div class="site"><span class="host" id="host"></span></div>

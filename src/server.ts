@@ -1,12 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getResourceDetails, listBazaarResources } from "./bazaar.js";
 import { CHAINS, normalizeNetwork } from "./chains.js";
 import { configPath, configSources, loadConfig, paymentLogPath, schemePriority } from "./config.js";
-import { SpendGuard, SpendLimitError } from "./limits.js";
+import { SpendGuard } from "./limits.js";
 import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "./nevermined.js";
 import type { WalletProvider } from "./providers/index.js";
-import { PaymentError, X402Requester } from "./x402/request.js";
+import { NO_WALLET, ResultError, registerReadOnlyTools, requestShape, run } from "./tools.js";
+import { X402Requester } from "./x402/request.js";
 
 export const VERSION = "0.4.0";
 
@@ -21,52 +21,6 @@ export const TOOL_NAMES = [
   "check_payment_requirements",
   "check_seller",
 ] as const;
-
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
-
-/** Carries a full result that should be returned with isError: true. */
-class ResultError extends Error {
-  constructor(readonly result: unknown) {
-    super("result");
-  }
-}
-
-function ok(data: unknown): ToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(data, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) }] };
-}
-
-function fail(err: unknown): ToolResult {
-  if (err instanceof ResultError) return { ...ok(err.result), isError: true };
-  const e = err as Error & { details?: Record<string, unknown>; code?: string };
-  const payload: Record<string, unknown> = { error: e.message ?? String(err) };
-  if (err instanceof SpendLimitError) {
-    payload.code = e.code;
-    payload.paid = false;
-  }
-  if (err instanceof PaymentError) Object.assign(payload, e.details);
-  return { ...ok(payload), isError: true };
-}
-
-async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
-  try {
-    return ok(await fn());
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-const NO_WALLET =
-  "No wallet is configured (WALLET_PROVIDER=none). Set WALLET_PROVIDER to cdp, privy or crossmint with its credentials, or browser with your wallet address.";
-
-const requestShape = {
-  url: z.string().url().describe("Full https URL of the x402 endpoint, including any query parameters the service requires"),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]).optional().describe("HTTP method to call the endpoint with; use the method the service documents (default GET)"),
-  headers: z.record(z.string(), z.string()).optional().describe("Extra request headers to send, e.g. {\"accept\": \"application/json\"}; payment headers are added automatically"),
-  body: z
-    .union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())])
-    .optional()
-    .describe("Request body for POST/PUT/PATCH; objects and arrays are sent as JSON with content-type application/json"),
-};
 
 export interface ServerOptions {
   provider: WalletProvider | null;
@@ -102,64 +56,6 @@ export function createServer(opts: ServerOptions): McpServer {
     .describe('CAIP-2 chain id, e.g. "eip155:84532" (Base Sepolia) or "eip155:8453" (Base). Omit for all chains.');
 
   // ---------------------------------------------------------------- wallet tools
-
-  server.registerTool(
-    "get_wallet_address",
-    {
-      title: "Get wallet address",
-      description:
-        "Returns the address of the configured wallet on each chain it can pay on (CAIP-2 ids such as eip155:84532 for Base Sepolia). " +
-        "Use it to tell the user where to send funds or which address will appear as the payer. Read-only: looks the address up with the " +
-        "wallet provider and moves no money. Fails with a clear message when no wallet is configured (WALLET_PROVIDER=none).",
-      inputSchema: { chain: chainArg },
-      annotations: { readOnlyHint: true },
-    },
-    async ({ chain }) =>
-      run(async () => {
-        const chains = pickChains(chain);
-        const addresses = await Promise.all(
-          chains.map(async (c) => ({ chain: c, name: CHAINS[c]?.name, address: await provider!.address(c) })),
-        );
-        return { provider: provider!.id, addresses };
-      }),
-  );
-
-  server.registerTool(
-    "get_wallet_balance",
-    {
-      title: "Get wallet balance",
-      description:
-        "Returns the wallet's USDC balance on each supported chain (and other tokens the provider reports, e.g. USDXM on Crossmint staging), " +
-        "read directly from chain RPCs. Use it before paying to confirm there are funds, or after paying to see the result. " +
-        "Read-only: never moves money. Pass `chain` to check one chain only.",
-      inputSchema: { chain: chainArg },
-      annotations: { readOnlyHint: true },
-    },
-    async ({ chain }) =>
-      run(async () => {
-        const chains = pickChains(chain);
-        const balances = await Promise.all(
-          chains.map(async (c) => {
-            const entry: Record<string, unknown> = { chain: c, name: CHAINS[c]?.name, testnet: CHAINS[c]?.testnet };
-            try {
-              entry.address = await provider!.address(c);
-              entry.usdc = await provider!.usdcBalance(c);
-            } catch (err) {
-              entry.error = (err as Error).message;
-            }
-            if (provider!.otherBalances) {
-              try {
-                entry.other = await provider!.otherBalances(c);
-              } catch {
-                // optional
-              }
-            }
-            return entry;
-          }),
-        );
-        return { provider: provider!.id, balances };
-      }),
-  );
 
   server.registerTool(
     "show_wallet_app",
@@ -231,41 +127,6 @@ export function createServer(opts: ServerOptions): McpServer {
   // ---------------------------------------------------------------- payment tools
 
   server.registerTool(
-    "list_bazaar_resources",
-    {
-      title: "List Bazaar resources",
-      description:
-        "Finds paid x402 APIs in the public CDP Bazaar catalog. With `query` (and optional network / price filters) it runs a ranked search; " +
-        "without arguments it lists the catalog page by page. Returns each resource's URL, description, HTTP method and prices per network. " +
-        "Use it to discover services; then use get_resource_details for one entry, check_seller before buying, and make_x402_request to pay. " +
-        "Read-only, no authentication, nothing is paid.",
-      inputSchema: {
-        query: z.string().optional().describe('Natural-language search, e.g. "weather forecast"'),
-        network: z.string().optional().describe('Filter by network, e.g. "eip155:84532" for Base Sepolia'),
-        maxUsdPrice: z.string().optional().describe('Maximum price in USD, e.g. "0.05"'),
-        limit: z.number().int().min(1).max(100).optional().describe("Maximum number of results (1-100; a search returns at most 20)"),
-        offset: z.number().int().min(0).optional().describe("Number of entries to skip when paging through the catalog without a query"),
-      },
-      annotations: { readOnlyHint: true, openWorldHint: true },
-    },
-    async (args) => run(() => listBazaarResources(args, opts.fetch)),
-  );
-
-  server.registerTool(
-    "get_resource_details",
-    {
-      title: "Get resource details",
-      description:
-        "Returns the full Bazaar record for one resource URL: every accepted payment option with its USD price, the description, and the " +
-        "input/output schema (required query or body fields). Use it after list_bazaar_resources to learn how to call a service correctly. " +
-        "Read-only, nothing is paid. If the URL is not in the Bazaar it says so; use check_payment_requirements to read the price from the endpoint itself.",
-      inputSchema: { resource: z.string().url().describe("The resource URL exactly as returned by list_bazaar_resources") },
-      annotations: { readOnlyHint: true, openWorldHint: true },
-    },
-    async ({ resource }) => run(() => getResourceDetails(resource, opts.fetch)),
-  );
-
-  server.registerTool(
     "make_x402_request",
     {
       title: "Make an x402 request",
@@ -288,34 +149,12 @@ export function createServer(opts: ServerOptions): McpServer {
       }),
   );
 
-  server.registerTool(
-    "check_payment_requirements",
-    {
-      title: "Check payment requirements",
-      description:
-        "Calls a URL without paying and returns its HTTP 402 payment options (scheme, network, price, asset, pay-to), which option this wallet " +
-        "would pay, and whether that payment fits the owner's limits. Use it to quote a price before deciding to buy. Sends one unpaid request " +
-        "to the seller; nothing is signed or paid.",
-      inputSchema: requestShape,
-      annotations: { readOnlyHint: true, openWorldHint: true },
-    },
-    async (args) => run(() => requester.checkRequirements(args)),
-  );
-
-  server.registerTool(
-    "check_seller",
-    {
-      title: "Check seller",
-      description:
-        "Runs every pre-payment check of make_x402_request without paying: the seller's Seller Probe record, the 402's payment options, required " +
-        "input missing from the request, the difference from the Bazaar price, payment refusals remembered for this host, and whether the seller " +
-        "supports Delivery Receipts. Use it before buying from an unfamiliar seller. Sends one unpaid request plus a Seller Probe lookup; nothing " +
-        "is signed or paid.",
-      inputSchema: requestShape,
-      annotations: { readOnlyHint: true, openWorldHint: true },
-    },
-    async (args) => run(() => requester.checkSeller(args)),
-  );
+  registerReadOnlyTools((name, config, cb) => server.registerTool(name, config, cb), {
+    provider,
+    requester,
+    fetch: opts.fetch,
+    payTool: "make_x402_request",
+  });
 
   return server;
 }
