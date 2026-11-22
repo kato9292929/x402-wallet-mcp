@@ -20,6 +20,8 @@ fi
 HOST="$(node -e 'console.log(new URL(process.argv[1]).hostname)' "$URL")"
 export X402_WALLET_MCP_HOME="$PWD/.try-phantom"
 mkdir -p "$X402_WALLET_MCP_HOME"
+# A fresh start each run: forget refusals remembered by earlier test runs.
+rm -f "$X402_WALLET_MCP_HOME/net-failures.jsonl"
 cat > "$X402_WALLET_MCP_HOME/config.json" <<EOF
 {
   "network": "mainnet",
