@@ -16,7 +16,7 @@ Set WALLET_PROVIDER to one of: cdp | privy | crossmint | browser
   cdp        ${CDP_ENV.join(", ")}
   privy      ${PRIVY_ENV.join(", ")}, PRIVY_WALLET_ID and/or PRIVY_SOLANA_WALLET_ID
   crossmint  ${CROSSMINT_ENV.join(", ")} (CROSSMINT_API_KEY is accepted for the key)
-  browser    BROWSER_WALLET_ADDRESS (your Rabby / MetaMask address; every payment is approved in the browser)
+  browser    BROWSER_SOLANA_ADDRESS (Phantom) and/or BROWSER_WALLET_ADDRESS (Rabby / MetaMask); every payment is approved in the browser
 
 Optional: NVM_API_KEY (Nevermined credits), SCHEME_PRIORITY (default "exact,nvm:erc4337").
 Spending limits live in ~/.x402-wallet-mcp/config.json.
@@ -54,9 +54,12 @@ export async function buildX402Client(provider) {
     const client = new x402Client();
     // Limits are enforced by SpendGuard before we ever get here.
     client.setSpendControls(false);
-    if (provider.evmSigner)
+    const chains = provider.chains();
+    if (provider.evmSigner && chains.some((c) => c.startsWith("eip155:"))) {
         client.register("eip155:*", new ExactEvmScheme(await provider.evmSigner()));
-    if (provider.solanaSigner)
+    }
+    if (provider.solanaSigner && chains.some((c) => c.startsWith("solana:"))) {
         client.register("solana:*", new ExactSvmScheme(await provider.solanaSigner()));
+    }
     return client;
 }
