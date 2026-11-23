@@ -221,9 +221,9 @@ describe("remote: checking a signed Solana payment by its outcome", async () => 
     expect(await solanaPaymentProblem(msg(x402), want)).toBeNull();
     expect(await solanaPaymentProblem(msg([budget([2, 9, 9, 9, 0]), budget([3, 7, 0, 0, 0, 0, 0, 0, 0]), pay, memo, lighthouse, lighthouse, lighthouse]), want)).toBeNull();
     expect(await solanaPaymentProblem(msg([lighthouse, ...x402]), want)).toBeNull();
-    // Phantom's Lighthouse checks may read the facilitator's account; that is accepted (as @x402/svm does).
-    const lighthouseReadsFacilitator = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: feePayer, isSigner: false, isWritable: false }], data: Buffer.from([1]) });
-    expect(await solanaPaymentProblem(msg([...x402, lighthouseReadsFacilitator]), want)).toBeNull();
+    // A Lighthouse instruction that reads the facilitator is refused, as PayAI does.
+    const lighthouseReadsFacilitator = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: feePayer, isSigner: false, isWritable: false }], data: Buffer.from([4]) });
+    expect(await solanaPaymentProblem(msg([...x402, lighthouseReadsFacilitator]), want)).toMatch(/facilitator appears/);
   });
 
   it("checks the seller's memo when it is set", async () => {

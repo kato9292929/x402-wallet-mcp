@@ -416,6 +416,26 @@ async function ataOf(owner: string, mint: string, tokenProgram: string): Promise
  *    payer's funds; with extra.memo, exactly one memo carrying it (§3.1).
  * Returns the reason when it fails.
  */
+/** What a signed Solana transaction contains, for error messages: each instruction's program, first data byte and whether it reads the fee payer. */
+export function describeSolanaMessage(message: Uint8Array, feePayer: string): string {
+  try {
+    const m: any = getCompiledTransactionMessageDecoder().decode(message);
+    const keys: string[] = m.staticAccounts;
+    return m.instructions
+      .map((ix: any, i: number) => {
+        const program = keys[ix.programAddressIndex];
+        const name =
+          { [COMPUTE_BUDGET_PROGRAM]: "budget", [MEMO_PROGRAM]: "memo", [LIGHTHOUSE_PROGRAM]: "lighthouse", [TOKEN_PROGRAM]: "token", [TOKEN_2022_PROGRAM]: "token2022" }[program] ??
+          program.slice(0, 8);
+        const reads = (ix.accountIndices ?? []).some((k: number) => keys[k] === feePayer) ? "+feePayer" : "";
+        return `${i}:${name}(${ix.data?.[0] ?? "-"})${reads}`;
+      })
+      .join(" ");
+  } catch {
+    return "unreadable";
+  }
+}
+
 export async function solanaPaymentProblem(message: Uint8Array, want: SolanaPaymentExpectation): Promise<string | null> {
   let m: any;
   try {
@@ -435,11 +455,9 @@ export async function solanaPaymentProblem(message: Uint8Array, want: SolanaPaym
     const program = keys[ix.programAddressIndex];
     const accounts: string[] = (ix.accountIndices ?? []).map((i: number) => keys[i]);
     const data = Buffer.from(ix.data ?? []);
-    if (program === want.feePayer) return "the facilitator is called as a program";
-    // Lighthouse only asserts on accounts (Phantom's checks may read the fee payer); like the reference
-    // facilitator (@x402/svm), it is accepted whatever accounts it reads. Everywhere else the
-    // facilitator must not appear.
-    if (program !== LIGHTHOUSE_PROGRAM && accounts.includes(want.feePayer)) return "the facilitator appears in an instruction";
+    // §2.1.1 for every instruction, Lighthouse included: PayAI refuses a Lighthouse instruction that
+    // reads the fee payer (fee_payer_transferring_funds), so sending it would only fail there.
+    if (program === want.feePayer || accounts.includes(want.feePayer)) return "the facilitator appears in an instruction";
     if (program === COMPUTE_BUDGET_PROGRAM) {
       if (data[0] !== 2 && data[0] !== 3) return "it has a compute-budget instruction other than limit/price";
       continue;
@@ -487,7 +505,11 @@ async function attachSignature(b: BuildRecord, payer: string, signature: string,
       }
     }
     const problem = await solanaPaymentProblem(new Uint8Array(tx.messageBytes), want!);
-    if (problem) throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}）。支払いはしていません。`);
+    if (problem) {
+      const shape = describeSolanaMessage(new Uint8Array(tx.messageBytes), want!.feePayer);
+      console.log(`[agentpay402] refused signed payment: ${problem} | ${shape}`);
+      throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${shape}）。支払いはしていません。`);
+    }
     if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
       throw new FlowError("この支払いに対する、指定した財布の署名ではありません。支払いはしていません。");
     }
@@ -536,6 +558,7 @@ export async function signAndPay(id: string, token: string | null, signature: st
       ...(err instanceof PaymentError ? err.details : {}),
     };
   }
+  if (want) result.signed_transaction_shape = describeSolanaMessage(signedMessageOf(payment), want.feePayer);
   if (result.paid !== false) await addSpent(deps.store, rec.payer, BigInt(prep.selected.priceMicros ?? 0n));
   await finishWith(rec, result, deps);
   return {
@@ -543,7 +566,25 @@ export async function signAndPay(id: string, token: string | null, signature: st
     paid: result.paid,
     explorer: result.tx?.explorer ?? null,
     message: result.message,
+    seller_error: result.status === "rejected_by_seller" ? sellerError(result.body) : undefined,
+    signed_transaction_shape: result.signed_transaction_shape,
   };
+}
+
+function signedMessageOf(payment: ExactPayment): Uint8Array {
+  const tx = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payment.payload.payload.transaction)));
+  return new Uint8Array(tx.messageBytes);
+}
+
+/** The seller's / facilitator's reason from a 402 body, if it gives one. */
+function sellerError(body: unknown): string | undefined {
+  if (typeof body !== "string") return undefined;
+  try {
+    const j = JSON.parse(body);
+    return typeof j.error === "string" ? j.error.slice(0, 300) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export { describeRequirement };
