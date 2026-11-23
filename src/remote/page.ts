@@ -71,7 +71,7 @@ $("host").textContent = new URL(d.url).host;
 $("amount").textContent = d.amount + " USDC";
 $("chain").textContent = d.chainName + " で支払い";
 setFull("to", short(d.to), d.to);
-setFull("from", short(d.address), d.address);
+setFull("from", d.address ? short(d.address) : "承認するときに選ぶ財布", d.address);
 setFull("url", new URL(d.url).pathname, d.url);
 $("testnet").hidden = !d.testnet;
 const sol = (window.phantom && window.phantom.solana) || window.solana;
@@ -94,28 +94,33 @@ function b58(bytes) {
 async function connectSolana() {
   if (!sol) throw new Error(d.phantom ? "Phantom が見つかりません。スマホなら下のリンクから Phantom アプリで開いてください。" : "Phantom が見つかりません。");
   const { publicKey } = await sol.connect();
-  if (publicKey.toString() !== d.address) throw new Error("Phantom で " + d.address + " を選んでから、もう一度押してください。");
+  const me = publicKey.toString();
+  if (d.address && me !== d.address) throw new Error("Phantom で " + d.address + " を選んでから、もう一度押してください。");
+  d.address = me; setFull("from", short(me), me);
   return async (req) => {
     const tx = solanaWeb3.VersionedTransaction.deserialize(Uint8Array.from(atob(req.wireTx), (c) => c.charCodeAt(0)));
     const signed = await sol.signTransaction(tx);
     const i = signed.message.staticAccountKeys.findIndex((k) => k.toString() === d.address);
     if (i < 0 || !signed.signatures[i]) throw new Error("署名が見つかりません。");
-    return b58(signed.signatures[i]);
+    // Phantom may add its Lighthouse safety instructions; the server checks what changed.
+    let bin = ""; for (const x of signed.serialize()) bin += String.fromCharCode(x);
+    return { signature: b58(signed.signatures[i]), signedTx: btoa(bin) };
   };
 }
 async function connectEvm() {
   const eth = window.ethereum;
   if (!eth) throw new Error("ブラウザのウォレット（Rabby、MetaMask など）が見つかりません。");
   const accounts = await eth.request({ method: "eth_requestAccounts" });
-  const acct = accounts.find((a) => a.toLowerCase() === d.address.toLowerCase());
+  const acct = d.address ? accounts.find((a) => a.toLowerCase() === d.address.toLowerCase()) : accounts[0];
   if (!acct) throw new Error("ウォレットで " + d.address + " を選んでから、もう一度押してください。");
+  d.address = acct; setFull("from", short(acct), acct);
   const hex = "0x" + d.chainId.toString(16);
   try { await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] }); }
   catch (e) {
     if (e && e.code === 4902 && d.chainParams) await eth.request({ method: "wallet_addEthereumChain", params: [d.chainParams] });
     else throw e;
   }
-  return (req) => eth.request({ method: "eth_signTypedData_v4", params: [acct, req.typedData] });
+  return async (req) => ({ signature: await eth.request({ method: "eth_signTypedData_v4", params: [acct, req.typedData] }) });
 }
 $("reject").onclick = async () => {
   try { await post("reject"); finish("拒否しました。支払いはしていません。Claude に戻ってください。", ""); }
@@ -127,11 +132,11 @@ $("approve").onclick = async () => {
     msg("ウォレットを確認しています…");
     const sign = d.family === "solana" ? await connectSolana() : await connectEvm();
     msg("支払いを用意しています…");
-    const req = await post("build");
+    const req = await post("build", { payer: d.address });
     msg("ウォレットで承認してください…");
-    const signature = await sign(req);
+    const signed = await sign(req);
     msg("支払っています…");
-    const r = await post("sign", { signature });
+    const r = await post("sign", signed);
     if (r.status === "fulfilled" || r.status === "recovered_by_retry") finish("支払いました。Claude に戻って「承認した」と伝えてください。");
     else finish("結果：" + r.status + "。Claude に戻って「承認した」と伝えてください。", r.paid === false ? "" : "err");
   } catch (e) {

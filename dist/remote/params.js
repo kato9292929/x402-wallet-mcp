@@ -21,7 +21,7 @@ function lowerOnly(v, def, name) {
 export function parseParams(url) {
     const q = url.searchParams;
     const out = {
-        network: "testnet",
+        network: "mainnet",
         perCallMaxUsd: lowerOnly(q.get("max"), DEFAULT_CONFIG.perCallMaxUsd, "max"),
         dailyMaxUsd: lowerOnly(q.get("daily"), DEFAULT_CONFIG.perSessionMaxUsd, "daily"),
     };
@@ -45,9 +45,6 @@ export function parseParams(url) {
         if (!isAddress(base))
             throw new ParamError('"base" is not a valid EVM address.');
         out.base = getAddress(base);
-    }
-    if (!out.solana && !out.base) {
-        throw new ParamError('Add your wallet address to the connection URL: ?solana=<Phantom address> and/or &base=<Rabby / MetaMask address>.');
     }
     return out;
 }

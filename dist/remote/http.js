@@ -94,9 +94,10 @@ export async function handleApproveAction(req, id, action) {
     const d = await deps();
     try {
         if (action === "build")
-            return json(await buildPayment(id, body.t ?? null, d));
-        if (action === "sign")
-            return json(await signAndPay(id, body.t ?? null, String(body.signature ?? ""), d));
+            return json(await buildPayment(id, body.t ?? null, d, body.payer));
+        if (action === "sign") {
+            return json(await signAndPay(id, body.t ?? null, String(body.signature ?? ""), d, typeof body.signedTx === "string" ? body.signedTx : undefined));
+        }
         if (action === "reject")
             return json(await rejectPayment(id, body.t ?? null, d));
         return json({ error: "unknown action" }, 404);

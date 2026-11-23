@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getResourceDetails, listBazaarResources } from "./bazaar.js";
+import { onchainUsdcBalance } from "./balance.js";
 import { CHAINS, normalizeNetwork } from "./chains.js";
 import { SpendLimitError } from "./limits.js";
 import type { WalletProvider } from "./providers/index.js";
@@ -117,23 +118,29 @@ export function registerReadOnlyTools(register: RegisterTool, ctx: ReadOnlyTools
       description:
         "Returns the wallet's USDC balance on each supported chain (and other tokens the provider reports, e.g. USDXM on Crossmint staging), " +
         "read directly from chain RPCs. Use it before paying to confirm there are funds, or after paying to see the result. " +
-        "Read-only: never moves money. Pass `chain` to check one chain only.",
-      inputSchema: { chain: chainArg },
+        "Read-only: never moves money. Pass `chain` to check one chain only, and `address` to read another wallet's balance " +
+        "(for example the user's own wallet address when the connection has none).",
+      inputSchema: {
+        chain: chainArg,
+        address: z.string().optional().describe("A wallet address to read instead of the configured one (Solana or 0x address)"),
+      },
       annotations: { readOnlyHint: true },
     },
-    async ({ chain }) =>
+    async ({ chain, address }) =>
       run(async () => {
-        const chains = pickChains(chain);
+        const isEvm = address ? /^0x[0-9a-fA-F]{40}$/.test(address) : false;
+        const chains = pickChains(chain).filter((c) => !address || (CHAINS[c]?.family === "evm") === isEvm);
+        if (address && !chains.length) throw new Error(`No supported chain for address ${address} here.`);
         const balances = await Promise.all(
           chains.map(async (c) => {
             const entry: Record<string, unknown> = { chain: c, name: CHAINS[c]?.name, testnet: CHAINS[c]?.testnet };
             try {
-              entry.address = await provider!.address(c);
-              entry.usdc = await provider!.usdcBalance(c);
+              entry.address = address ?? (await provider!.address(c));
+              entry.usdc = address ? await onchainUsdcBalance(c, address) : await provider!.usdcBalance(c);
             } catch (err) {
               entry.error = (err as Error).message;
             }
-            if (provider!.otherBalances) {
+            if (!address && provider!.otherBalances) {
               try {
                 entry.other = await provider!.otherBalances(c);
               } catch {

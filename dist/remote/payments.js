@@ -2,7 +2,7 @@ import { createPublicKey, randomBytes, verify } from "node:crypto";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
-import { getBase58Encoder, getBase64Decoder, getBase64Encoder, getTransactionDecoder, getTransactionEncoder, } from "@solana/kit";
+import { address as solAddress, getBase58Encoder, getCompiledTransactionMessageDecoder, getBase64Decoder, getBase64Encoder, getTransactionDecoder, getTransactionEncoder, } from "@solana/kit";
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
 import { CHAINS, formatMicros } from "../chains.js";
 import { SpendGuard } from "../limits.js";
@@ -24,6 +24,8 @@ const RESULT_TTL_S = 1800;
 const LOCK_TTL_S = 900;
 const DAY_S = 24 * 3600;
 export const MAX_PENDING_PER_ADDRESS = 5;
+/** Without an address in the URL the wallet is chosen at approval, so pending requests share one bucket. */
+export const MAX_PENDING_UNBOUND = 100;
 const K = {
     pending: (id) => `ap:p:${id}`,
     build: (id) => `ap:b:${id}`,
@@ -72,7 +74,8 @@ export async function requesterFor(params, deps) {
     const wallet = new AddressWallet(params);
     let spent = 0n;
     for (const c of wallet.chains())
-        spent += await spent24h(deps.store, await wallet.address(c));
+        if (wallet.knows(c))
+            spent += await spent24h(deps.store, await wallet.address(c));
     return new X402Requester({
         provider: wallet,
         guard: new SpendGuard(spent),
@@ -97,15 +100,17 @@ export async function requestPayment(params, input, origin, deps) {
         throw new PaymentError("This seller's payment option cannot be paid with an approval link (only USDC `exact` payments are supported).");
     }
     const wallet = new AddressWallet(params);
-    const payer = await wallet.address(sel.network);
-    const n = await deps.store.incr(K.count(payer), 1, PENDING_TTL_S);
-    if (n > MAX_PENDING_PER_ADDRESS) {
-        await deps.store.incr(K.count(payer), -1, PENDING_TTL_S);
+    const payer = wallet.knows(sel.network) ? await wallet.address(sel.network) : "";
+    const countKey = payer || "unbound";
+    const max = payer ? MAX_PENDING_PER_ADDRESS : MAX_PENDING_UNBOUND;
+    const n = await deps.store.incr(K.count(countKey), 1, PENDING_TTL_S);
+    if (n > max) {
+        await deps.store.incr(K.count(countKey), -1, PENDING_TTL_S);
         return {
             url: input.url,
             status: "blocked",
             blocked_reason: "too_many_pending",
-            message: `There are already ${MAX_PENDING_PER_ADDRESS} payments waiting for approval for this wallet. Approve or reject them, or wait ${PENDING_TTL_S / 60} minutes.`,
+            message: `There are already ${max} payments waiting for approval for this wallet. Approve or reject them, or wait ${PENDING_TTL_S / 60} minutes.`,
             paid: false,
         };
     }
@@ -120,6 +125,7 @@ export async function requestPayment(params, input, origin, deps) {
         asset: sel.asset,
         payTo: sel.payTo,
         payer,
+        countKey,
         priceUsd: formatMicros(sel.priceMicros),
         createdAt: now,
         expiresAt: now + PENDING_TTL_S * 1000,
@@ -134,7 +140,7 @@ export async function requestPayment(params, input, origin, deps) {
         approve_url: approveUrl,
         phantom_app_url: phantomBrowseLink(approveUrl, origin),
         expires_at: new Date(rec.expiresAt).toISOString(),
-        payment: { network: sel.network, chain: CHAINS[sel.network]?.name, priceUsd: rec.priceUsd, payTo: sel.payTo, payer },
+        payment: { network: sel.network, chain: CHAINS[sel.network]?.name, priceUsd: rec.priceUsd, payTo: sel.payTo, payer: payer || "chosen by the user on the approval page" },
         probe: prep.probeOut,
         price_check: prep.priceCheck,
         warnings: prep.warnings.length ? prep.warnings : undefined,
@@ -180,7 +186,7 @@ async function finishWith(rec, result, deps) {
     await deps.store.set(K.result(rec.id), result, RESULT_TTL_S);
     await deps.store.del(K.pending(rec.id));
     await deps.store.del(K.build(rec.id));
-    await deps.store.incr(K.count(rec.payer), -1, PENDING_TTL_S);
+    await deps.store.incr(K.count(rec.countKey ?? rec.payer), -1, PENDING_TTL_S);
 }
 export async function rejectPayment(id, token, deps) {
     const rec = await pendingFor(id, token, deps);
@@ -218,10 +224,34 @@ async function buildUnsigned(prep, payer) {
     const payload = await client.createPaymentPayload({ ...prep.rawPaymentRequired, accepts: [sel.raw] });
     return { family, payload, messageBytes, typedData };
 }
-export async function buildPayment(id, token, deps) {
-    const rec = await pendingFor(id, token, deps);
+/** The wallet that will pay: fixed by the connection URL, or the one the user connected on the page. */
+function payerFor(rec, fromPage) {
+    const family = CHAINS[rec.network].family;
+    const given = (fromPage ?? "").trim();
+    if (rec.payer) {
+        if (given && given.toLowerCase() !== rec.payer.toLowerCase()) {
+            throw new FlowError(`この支払いは ${rec.payer} から払う設定です。ウォレットでその財布を選んでください。`);
+        }
+        return rec.payer;
+    }
+    if (!given)
+        throw new FlowError("ウォレットの財布が読み取れませんでした。もう一度押してください。");
+    try {
+        return family === "solana" ? solAddress(given) : getAddress(given);
+    }
+    catch {
+        throw new FlowError("ウォレットの財布のアドレスが読み取れませんでした。");
+    }
+}
+function paramsWithPayer(rec, payer) {
+    return CHAINS[rec.network].family === "solana" ? { ...rec.params, solana: payer } : { ...rec.params, base: payer };
+}
+export async function buildPayment(id, token, deps, payerFromPage) {
+    let rec = await pendingFor(id, token, deps);
     if (await deps.store.get(K.lock(id)))
         throw new FlowError("この支払いは、いま処理しています。", 409);
+    const payer = payerFor(rec, payerFromPage);
+    rec = { ...rec, payer, params: paramsWithPayer(rec, payer) };
     // Check everything again now, against a fresh 402.
     const requester = await requesterFor(rec.params, deps);
     const prep = await requester.prepare(rec.input);
@@ -267,7 +297,56 @@ function ed25519Key(addr) {
     });
 }
 /** Puts the wallet's signature into the built payment after checking it is the owner's, over exactly this payment. */
-async function attachSignature(b, payer, signature) {
+export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+/** Phantom adds up to 3 Lighthouse instructions (x402 exact SVM spec: facilitators must allow them). */
+const MAX_WALLET_ADDED = 3;
+/**
+ * Checks what the wallet changed in the transaction it signed. Allowed: up to 3 added Lighthouse
+ * instructions (Phantom's user protection). Everything we built (fee payer, blockhash, signers and
+ * every original instruction, in order) must be unchanged. Returns a reason when it is not.
+ */
+export function walletChangeProblem(original, signed) {
+    const dec = getCompiledTransactionMessageDecoder();
+    const o = dec.decode(original);
+    const s = dec.decode(signed);
+    if (s.addressTableLookups?.length)
+        return "address lookup tables were added";
+    if (s.staticAccounts[0] !== o.staticAccounts[0])
+        return "the fee payer changed";
+    if (s.lifetimeToken !== o.lifetimeToken)
+        return "the blockhash changed";
+    if (s.header.numSignerAccounts !== o.header.numSignerAccounts)
+        return "the signers changed";
+    for (let i = 0; i < o.header.numSignerAccounts; i++)
+        if (s.staticAccounts[i] !== o.staticAccounts[i])
+            return "the signers changed";
+    const resolve = (m) => m.instructions.map((ix) => ({
+        program: m.staticAccounts[ix.programAddressIndex],
+        key: JSON.stringify([
+            m.staticAccounts[ix.programAddressIndex],
+            (ix.accountIndices ?? []).map((i) => m.staticAccounts[i]),
+            Buffer.from(ix.data ?? []).toString("hex"),
+        ]),
+    }));
+    const ro = resolve(o);
+    const rs = resolve(s);
+    let j = 0;
+    let added = 0;
+    for (const ix of rs) {
+        if (j < ro.length && ix.key === ro[j].key)
+            j++;
+        else if (ix.program === LIGHTHOUSE_PROGRAM)
+            added++;
+        else
+            return "the wallet changed or added an instruction";
+    }
+    if (j !== ro.length)
+        return "an instruction was removed or changed";
+    if (added > MAX_WALLET_ADDED)
+        return "too many instructions were added";
+    return null;
+}
+async function attachSignature(b, payer, signature, signedTx) {
     const payload = fromJson(b.payload);
     if (b.family === "solana") {
         let sig;
@@ -277,15 +356,29 @@ async function attachSignature(b, payer, signature) {
         catch {
             throw new FlowError("ウォレットの署名を読めませんでした。支払いはしていません。");
         }
-        const message = new Uint8Array(getBase64Encoder().encode(b.messageBytes));
-        if (sig.length !== 64 || !verify(null, message, ed25519Key(payer), sig)) {
-            throw new FlowError("この支払いに対する、指定した財布の署名ではありません（ウォレットが取引を書き換えた可能性もあります）。支払いはしていません。");
-        }
-        const tx = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payload.payload.transaction)));
-        if (getBase64Decoder().decode(tx.messageBytes) !== b.messageBytes)
+        const built = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payload.payload.transaction)));
+        if (getBase64Decoder().decode(built.messageBytes) !== b.messageBytes)
             throw new FlowError("用意した支払いと合いません。支払いはしていません。", 500);
-        const signed = { ...tx, signatures: { ...tx.signatures, [payer]: sig } };
-        payload.payload.transaction = getBase64Decoder().decode(getTransactionEncoder().encode(signed));
+        // The transaction the wallet actually signed: ours, or ours with Phantom's Lighthouse instructions.
+        let tx = built;
+        if (signedTx) {
+            try {
+                tx = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(signedTx)));
+            }
+            catch {
+                throw new FlowError("ウォレットが返した取引を読めませんでした。支払いはしていません。");
+            }
+            const problem = walletChangeProblem(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
+            if (problem)
+                throw new FlowError(`ウォレットが取引の中身を変えたため、払いません（${problem}）。支払いはしていません。`);
+        }
+        if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
+            throw new FlowError("この支払いに対する、指定した財布の署名ではありません。支払いはしていません。");
+        }
+        const signers = {};
+        for (const k of Object.keys(tx.signatures))
+            signers[k] = k === payer ? sig : null;
+        payload.payload.transaction = getBase64Decoder().decode(getTransactionEncoder().encode({ ...tx, signatures: signers }));
     }
     else {
         if (!/^0x[0-9a-fA-F]{130}$/.test(signature))
@@ -299,12 +392,12 @@ async function attachSignature(b, payer, signature) {
     }
     return { headers: new x402HTTPClient(new x402Client()).encodePaymentSignatureHeader(payload), payload };
 }
-export async function signAndPay(id, token, signature, deps) {
+export async function signAndPay(id, token, signature, deps, signedTx) {
     const rec = await pendingFor(id, token, deps);
     const b = await deps.store.get(K.build(id));
     if (!b)
         throw new FlowError("支払いの用意が済んでいないか、時間が経ちすぎました。もう一度押してください。", 409);
-    const payment = await attachSignature(b, rec.payer, signature);
+    const payment = await attachSignature(b, rec.payer, signature, signedTx);
     // At most once per request id, from here on.
     if (!(await deps.store.setIfAbsent(K.lock(id), Date.now(), LOCK_TTL_S)))
         throw new FlowError("この支払いは、いま処理しています。", 409);
