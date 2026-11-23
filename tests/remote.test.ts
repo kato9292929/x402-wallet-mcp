@@ -212,7 +212,7 @@ describe("remote: checking a signed Solana payment by its outcome", async () => 
   };
   const pay = transferTo(ata(payTo));
   const memo = new web3.TransactionInstruction({ programId: MEMO, keys: [], data: Buffer.from("nonce-123") });
-  const lighthouse = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payer), isSigner: false, isWritable: false }], data: Buffer.from([1, 2]) });
+  const lighthouse = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payer), isSigner: false, isWritable: false }], data: Buffer.from([2, 2]) });
   const msg = (ixs: any[], fp = feePayer) =>
     new web3.TransactionMessage({ payerKey: fp, recentBlockhash: web3.Keypair.generate().publicKey.toBase58(), instructions: ixs }).compileToV0Message().serialize();
   const x402 = [budget([2, 0x40, 0x0d, 0x03, 0]), budget([3, 1, 0, 0, 0, 0, 0, 0, 0]), pay, memo];
@@ -221,9 +221,14 @@ describe("remote: checking a signed Solana payment by its outcome", async () => 
     expect(await solanaPaymentProblem(msg(x402), want)).toBeNull();
     expect(await solanaPaymentProblem(msg([budget([2, 9, 9, 9, 0]), budget([3, 7, 0, 0, 0, 0, 0, 0, 0]), pay, memo, lighthouse, lighthouse, lighthouse]), want)).toBeNull();
     expect(await solanaPaymentProblem(msg([lighthouse, ...x402]), want)).toBeNull();
-    // A Lighthouse instruction that reads the facilitator is refused, as PayAI does.
-    const lighthouseReadsFacilitator = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: feePayer, isSigner: false, isWritable: false }], data: Buffer.from([4]) });
-    expect(await solanaPaymentProblem(msg([...x402, lighthouseReadsFacilitator]), want)).toMatch(/facilitator appears/);
+    // Phantom's real shape: assertions before and after the payment, one reading the facilitator.
+    const assert6 = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payer), isSigner: false, isWritable: false }], data: Buffer.from([6]) });
+    const assert6Fp = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: feePayer, isSigner: false, isWritable: false }], data: Buffer.from([6]) });
+    const assert10 = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payTo), isSigner: false, isWritable: false }], data: Buffer.from([10]) });
+    expect(await solanaPaymentProblem(msg([x402[0], x402[1], assert6, assert6Fp, pay, memo, assert10]), want)).toBeNull();
+    // Lighthouse variants that can change state are refused.
+    const memoryWrite = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payer), isSigner: false, isWritable: true }], data: Buffer.from([0]) });
+    expect(await solanaPaymentProblem(msg([...x402, memoryWrite]), want)).toMatch(/not an assertion/);
   });
 
   it("checks the seller's memo when it is set", async () => {
