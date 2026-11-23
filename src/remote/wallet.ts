@@ -1,6 +1,6 @@
 import { onchainUsdcBalance, testnetFundingNotes } from "../balance.js";
 import { BASE, BASE_SEPOLIA, CHAINS, SOLANA, SOLANA_DEVNET } from "../chains.js";
-import { assertChain, type FundingInfo, type WalletProvider } from "../providers/types.js";
+import { ProviderConfigError, assertChain, type FundingInfo, type WalletProvider } from "../providers/types.js";
 import type { RemoteParams } from "./params.js";
 
 /**
@@ -12,16 +12,29 @@ export class AddressWallet implements WalletProvider {
 
   constructor(private readonly p: RemoteParams) {}
 
+  /** With no address in the URL, payments are on Solana and the wallet is chosen on the approval page. */
   chains(): string[] {
     const out: string[] = [];
     if (this.p.base) out.push(this.p.network === "testnet" ? BASE_SEPOLIA : BASE);
-    if (this.p.solana) out.push(this.p.network === "testnet" ? SOLANA_DEVNET : SOLANA);
+    if (this.p.solana || !this.p.base) out.push(this.p.network === "testnet" ? SOLANA_DEVNET : SOLANA);
     return out;
+  }
+
+  /** Whether the connection URL fixes the paying address for this chain. */
+  knows(chain: string): boolean {
+    return CHAINS[chain]?.family === "solana" ? !!this.p.solana : !!this.p.base;
   }
 
   async address(chain: string): Promise<string> {
     assertChain(this, chain);
-    return CHAINS[chain].family === "solana" ? this.p.solana! : this.p.base!;
+    const a = CHAINS[chain].family === "solana" ? this.p.solana : this.p.base;
+    if (!a) {
+      throw new ProviderConfigError(
+        "This connection has no wallet address: the user picks the wallet on the approval page when paying. " +
+          "To read a balance, ask the user for their wallet address and use it with get_wallet_balance's address argument.",
+      );
+    }
+    return a;
   }
 
   async usdcBalance(chain: string): Promise<string> {

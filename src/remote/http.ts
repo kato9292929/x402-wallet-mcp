@@ -111,7 +111,7 @@ export async function handleApprovePage(req: Request, id: string): Promise<Respo
 }
 
 export async function handleApproveAction(req: Request, id: string, action: string): Promise<Response> {
-  let body: { t?: string; signature?: string };
+  let body: { t?: string; signature?: string; payer?: string; signedTx?: string };
   try {
     body = await req.json();
   } catch {
@@ -119,8 +119,10 @@ export async function handleApproveAction(req: Request, id: string, action: stri
   }
   const d = await deps();
   try {
-    if (action === "build") return json(await buildPayment(id, body.t ?? null, d));
-    if (action === "sign") return json(await signAndPay(id, body.t ?? null, String(body.signature ?? ""), d));
+    if (action === "build") return json(await buildPayment(id, body.t ?? null, d, body.payer));
+    if (action === "sign") {
+      return json(await signAndPay(id, body.t ?? null, String(body.signature ?? ""), d, typeof body.signedTx === "string" ? body.signedTx : undefined));
+    }
     if (action === "reject") return json(await rejectPayment(id, body.t ?? null, d));
     return json({ error: "unknown action" }, 404);
   } catch (err) {

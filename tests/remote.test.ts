@@ -7,6 +7,8 @@ import {
   buildPayment,
   getResult,
   phantomBrowseLink,
+  walletChangeProblem,
+  LIGHTHOUSE_PROGRAM,
   rejectPayment,
   requestPayment,
   signAndPay,
@@ -60,7 +62,8 @@ describe("remote: connection URL", () => {
   it("reads addresses and can only lower the limits", () => {
     const p = parseParams(new URL(`${ORIGIN}/api/mcp?base=${owner.address}&network=mainnet&max=0.05&daily=5`));
     expect(p).toMatchObject({ base: owner.address, network: "mainnet", perCallMaxUsd: "0.05", dailyMaxUsd: "1.00" });
-    expect(() => parseParams(new URL(`${ORIGIN}/api/mcp?network=mainnet`))).toThrow(ParamError);
+    expect(parseParams(new URL(`${ORIGIN}/mcp`))).toMatchObject({ network: "mainnet", perCallMaxUsd: "0.10", dailyMaxUsd: "1.00" });
+    expect(() => parseParams(new URL(`${ORIGIN}/mcp?network=moon`))).toThrow(ParamError);
     expect(() => parseParams(new URL(`${ORIGIN}/api/mcp?solana=nope`))).toThrow(/Solana/);
   });
 
@@ -172,5 +175,36 @@ describe("remote: approval flow (Base)", () => {
     const p = parseParams(new URL(`${ORIGIN}/api/mcp?base=${owner.address}&network=mainnet`));
     expect(p.network).toBe("mainnet");
     expect(BASE).toBe("eip155:8453");
+  });
+});
+
+describe("remote: what Phantom may change in a Solana payment", async () => {
+  const web3 = await import("@solana/web3.js");
+  const user = web3.Keypair.generate().publicKey;
+  const feePayer = web3.Keypair.generate().publicKey;
+  const blockhash = web3.Keypair.generate().publicKey.toBase58();
+  const TOKEN = new web3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+  const ix = (program: InstanceType<typeof web3.PublicKey>, data: number[]) =>
+    new web3.TransactionInstruction({ programId: program, keys: [{ pubkey: user, isSigner: true, isWritable: true }], data: Buffer.from(data) });
+  const transfer = ix(TOKEN, [12, 1, 2, 3]);
+  const memo = ix(new web3.PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"), [7, 7]);
+  const lighthouse = ix(new web3.PublicKey(LIGHTHOUSE_PROGRAM), [9]);
+  const msg = (ixs: InstanceType<typeof web3.TransactionInstruction>[], opts: { payer?: any; hash?: string } = {}) =>
+    new web3.TransactionMessage({ payerKey: opts.payer ?? feePayer, recentBlockhash: opts.hash ?? blockhash, instructions: ixs }).compileToV0Message().serialize();
+  const original = msg([transfer, memo]);
+
+  it("accepts the same transaction, or up to 3 added Lighthouse instructions", () => {
+    expect(walletChangeProblem(original, original)).toBeNull();
+    expect(walletChangeProblem(original, msg([transfer, memo, lighthouse]))).toBeNull();
+    expect(walletChangeProblem(original, msg([lighthouse, transfer, lighthouse, memo, lighthouse]))).toBeNull();
+  });
+
+  it("refuses any other change", () => {
+    expect(walletChangeProblem(original, msg([transfer, memo, lighthouse, lighthouse, lighthouse, lighthouse]))).toMatch(/too many/);
+    expect(walletChangeProblem(original, msg([transfer, memo, ix(TOKEN, [3])]))).toMatch(/changed or added/);
+    expect(walletChangeProblem(original, msg([ix(TOKEN, [12, 9, 9, 9]), memo]))).toBeTruthy();
+    expect(walletChangeProblem(original, msg([transfer]))).toBeTruthy();
+    expect(walletChangeProblem(original, msg([transfer, memo], { hash: web3.Keypair.generate().publicKey.toBase58() }))).toMatch(/blockhash/);
+    expect(walletChangeProblem(original, msg([transfer, memo], { payer: web3.Keypair.generate().publicKey }))).toMatch(/fee payer/);
   });
 });

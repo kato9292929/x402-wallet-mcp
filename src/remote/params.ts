@@ -4,8 +4,9 @@ import { parseUsdToMicros, type NetworkMode } from "../chains.js";
 import { DEFAULT_CONFIG, type SpendConfig } from "../config.js";
 
 /**
- * Settings carried by the connection URL the owner pastes into Claude:
- *   /api/mcp?solana=<Phantom address>&base=<Rabby / MetaMask address>&network=mainnet&max=0.05&daily=0.50
+ * Settings carried by the connection URL. All are optional: the plain URL (/mcp) pays on Solana
+ * mainnet with the wallet the user picks on the approval page. Optional:
+ *   ?solana=<Phantom address>&base=<Rabby / MetaMask address>&network=testnet&max=0.05&daily=0.50
  * The server holds no keys. `max` (per payment) and `daily` (24-hour total per address) can only
  * lower the defaults, never raise them. No tool can change any of this.
  */
@@ -34,7 +35,7 @@ function lowerOnly(v: string | null, def: string, name: string): string {
 export function parseParams(url: URL): RemoteParams {
   const q = url.searchParams;
   const out: RemoteParams = {
-    network: "testnet",
+    network: "mainnet",
     perCallMaxUsd: lowerOnly(q.get("max"), DEFAULT_CONFIG.perCallMaxUsd, "max"),
     dailyMaxUsd: lowerOnly(q.get("daily"), DEFAULT_CONFIG.perSessionMaxUsd, "daily"),
   };
@@ -55,9 +56,6 @@ export function parseParams(url: URL): RemoteParams {
   if (base) {
     if (!isAddress(base)) throw new ParamError('"base" is not a valid EVM address.');
     out.base = getAddress(base);
-  }
-  if (!out.solana && !out.base) {
-    throw new ParamError('Add your wallet address to the connection URL: ?solana=<Phantom address> and/or &base=<Rabby / MetaMask address>.');
   }
   return out;
 }
