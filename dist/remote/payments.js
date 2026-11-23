@@ -210,7 +210,7 @@ async function buildUnsigned(prep, payer) {
                 messageBytes = new Uint8Array(tx.messageBytes);
                 return { [payer]: new Uint8Array(64) };
             }),
-        }));
+        }, { transactionVersions: [0] }));
     }
     else {
         client.register("eip155:*", new ExactEvmScheme({

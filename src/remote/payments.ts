@@ -287,7 +287,7 @@ async function buildUnsigned(prep: Prepared, payer: string) {
             messageBytes = new Uint8Array(tx.messageBytes);
             return { [payer]: new Uint8Array(64) };
           }),
-      } as any),
+      } as any, { transactionVersions: [0] }),
     );
   } else {
     client.register(

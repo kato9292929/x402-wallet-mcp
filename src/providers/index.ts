@@ -64,7 +64,9 @@ export async function buildX402Client(provider: WalletProvider): Promise<x402Cli
     client.register("eip155:*", new ExactEvmScheme(await provider.evmSigner()));
   }
   if (provider.solanaSigner && chains.some((c) => c.startsWith("solana:"))) {
-    client.register("solana:*", new ExactSvmScheme(await provider.solanaSigner()));
+    // Browser wallets (Phantom) and web3.js sign version-0 transactions only.
+    const versions = provider.id === "browser" ? { transactionVersions: [0] as const } : undefined;
+    client.register("solana:*", new ExactSvmScheme(await provider.solanaSigner(), versions));
   }
   return client;
 }
