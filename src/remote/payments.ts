@@ -435,7 +435,11 @@ export async function solanaPaymentProblem(message: Uint8Array, want: SolanaPaym
     const program = keys[ix.programAddressIndex];
     const accounts: string[] = (ix.accountIndices ?? []).map((i: number) => keys[i]);
     const data = Buffer.from(ix.data ?? []);
-    if (program === want.feePayer || accounts.includes(want.feePayer)) return "the facilitator appears in an instruction";
+    if (program === want.feePayer) return "the facilitator is called as a program";
+    // Lighthouse only asserts on accounts (Phantom's checks may read the fee payer); like the reference
+    // facilitator (@x402/svm), it is accepted whatever accounts it reads. Everywhere else the
+    // facilitator must not appear.
+    if (program !== LIGHTHOUSE_PROGRAM && accounts.includes(want.feePayer)) return "the facilitator appears in an instruction";
     if (program === COMPUTE_BUDGET_PROGRAM) {
       if (data[0] !== 2 && data[0] !== 3) return "it has a compute-budget instruction other than limit/price";
       continue;
