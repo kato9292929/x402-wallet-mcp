@@ -7,7 +7,7 @@ import {
   buildPayment,
   getResult,
   phantomBrowseLink,
-  walletChangeProblem,
+  solanaPaymentProblem,
   LIGHTHOUSE_PROGRAM,
   rejectPayment,
   requestPayment,
@@ -178,41 +178,66 @@ describe("remote: approval flow (Base)", () => {
   });
 });
 
-describe("remote: what Phantom may change in a Solana payment", async () => {
+describe("remote: checking a signed Solana payment by its outcome", async () => {
   const web3 = await import("@solana/web3.js");
-  const user = web3.Keypair.generate().publicKey;
+  const P = (k: string) => new web3.PublicKey(k);
+  const TOKEN = P("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+  const ATA = P("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+  const CB = P("ComputeBudget111111111111111111111111111111");
+  const MEMO = P("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+  const LH = P(LIGHTHOUSE_PROGRAM);
+  const USDC = P("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+  const payer = web3.Keypair.generate().publicKey;
   const feePayer = web3.Keypair.generate().publicKey;
-  const blockhash = web3.Keypair.generate().publicKey.toBase58();
-  const TOKEN = new web3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-  const ix = (program: InstanceType<typeof web3.PublicKey>, data: number[]) =>
-    new web3.TransactionInstruction({ programId: program, keys: [{ pubkey: user, isSigner: true, isWritable: true }], data: Buffer.from(data) });
-  const transfer = ix(TOKEN, [12, 1, 2, 3]);
-  const memo = ix(new web3.PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"), [7, 7]);
-  const lighthouse = ix(new web3.PublicKey(LIGHTHOUSE_PROGRAM), [9]);
-  const msg = (ixs: InstanceType<typeof web3.TransactionInstruction>[], opts: { payer?: any; hash?: string } = {}) =>
-    new web3.TransactionMessage({ payerKey: opts.payer ?? feePayer, recentBlockhash: opts.hash ?? blockhash, instructions: ixs }).compileToV0Message().serialize();
-  const original = msg([transfer, memo]);
+  const payTo = web3.Keypair.generate().publicKey;
+  const ata = (owner: any) => web3.PublicKey.findProgramAddressSync([owner.toBuffer(), TOKEN.toBuffer(), USDC.toBuffer()], ATA)[0];
+  const want = { payer: payer.toBase58(), feePayer: feePayer.toBase58(), payTo: payTo.toBase58(), asset: USDC.toBase58(), amount: "1000" };
 
-  it("accepts the same transaction, or up to 3 added Lighthouse instructions", () => {
-    expect(walletChangeProblem(original, original)).toBeNull();
-    expect(walletChangeProblem(original, msg([transfer, memo, lighthouse]))).toBeNull();
-    expect(walletChangeProblem(original, msg([lighthouse, transfer, lighthouse, memo, lighthouse]))).toBeNull();
+  const budget = (d: number[]) => new web3.TransactionInstruction({ programId: CB, keys: [], data: Buffer.from(d) });
+  const transferTo = (dest: any, amount = 1000n, mint = USDC) => {
+    const data = Buffer.alloc(10);
+    data[0] = 12;
+    data.writeBigUInt64LE(amount, 1);
+    data[9] = 6;
+    return new web3.TransactionInstruction({
+      programId: TOKEN,
+      keys: [
+        { pubkey: ata(payer), isSigner: false, isWritable: true },
+        { pubkey: mint, isSigner: false, isWritable: false },
+        { pubkey: dest, isSigner: false, isWritable: true },
+        { pubkey: payer, isSigner: true, isWritable: false },
+      ],
+      data,
+    });
+  };
+  const pay = transferTo(ata(payTo));
+  const memo = new web3.TransactionInstruction({ programId: MEMO, keys: [], data: Buffer.from("nonce-123") });
+  const lighthouse = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payer), isSigner: false, isWritable: false }], data: Buffer.from([1, 2]) });
+  const msg = (ixs: any[], fp = feePayer) =>
+    new web3.TransactionMessage({ payerKey: fp, recentBlockhash: web3.Keypair.generate().publicKey.toBase58(), instructions: ixs }).compileToV0Message().serialize();
+  const x402 = [budget([2, 0x40, 0x0d, 0x03, 0]), budget([3, 1, 0, 0, 0, 0, 0, 0, 0]), pay, memo];
+
+  it("accepts the payment as built, and with Phantom's Lighthouse and new compute-budget values", async () => {
+    expect(await solanaPaymentProblem(msg(x402), want)).toBeNull();
+    expect(await solanaPaymentProblem(msg([budget([2, 9, 9, 9, 0]), budget([3, 7, 0, 0, 0, 0, 0, 0, 0]), pay, memo, lighthouse, lighthouse, lighthouse]), want)).toBeNull();
+    expect(await solanaPaymentProblem(msg([lighthouse, ...x402]), want)).toBeNull();
   });
 
-  it("accepts new compute-budget values, not other compute-budget instructions", () => {
-    const CB = new web3.PublicKey("ComputeBudget111111111111111111111111111111");
-    const budget = (d: number[]) => new web3.TransactionInstruction({ programId: CB, keys: [], data: Buffer.from(d) });
-    const built = msg([budget([2, 1, 0, 0, 0]), budget([3, 1, 0, 0, 0, 0, 0, 0, 0]), transfer, memo]);
-    expect(walletChangeProblem(built, msg([budget([2, 9, 9, 0, 0]), budget([3, 5, 0, 0, 0, 0, 0, 0, 0]), transfer, memo, lighthouse]))).toBeNull();
-    expect(walletChangeProblem(built, msg([budget([2, 1, 0, 0, 0]), budget([3, 1, 0, 0, 0, 0, 0, 0, 0]), budget([1, 0, 0, 0, 0]), transfer, memo]))).toMatch(/changed or added/);
+  it("checks the seller's memo when it is set", async () => {
+    expect(await solanaPaymentProblem(msg(x402), { ...want, memo: "nonce-123" })).toBeNull();
+    expect(await solanaPaymentProblem(msg(x402), { ...want, memo: "invoice-9" })).toMatch(/memo/);
   });
 
-  it("refuses any other change", () => {
-    expect(walletChangeProblem(original, msg([transfer, memo, lighthouse, lighthouse, lighthouse, lighthouse]))).toMatch(/too many/);
-    expect(walletChangeProblem(original, msg([transfer, memo, ix(TOKEN, [3])]))).toMatch(/changed or added/);
-    expect(walletChangeProblem(original, msg([ix(TOKEN, [12, 9, 9, 9]), memo]))).toBeTruthy();
-    expect(walletChangeProblem(original, msg([transfer]))).toBeTruthy();
-    expect(walletChangeProblem(original, msg([transfer, memo], { hash: web3.Keypair.generate().publicKey.toBase58() }))).toMatch(/blockhash/);
-    expect(walletChangeProblem(original, msg([transfer, memo], { payer: web3.Keypair.generate().publicKey }))).toMatch(/fee payer/);
+  it("refuses anything that is not exactly the payment shown", async () => {
+    expect(await solanaPaymentProblem(msg([...x402.slice(0, 2), transferTo(ata(payTo), 2000n), memo]), want)).toMatch(/not the payment/);
+    expect(await solanaPaymentProblem(msg([...x402.slice(0, 2), transferTo(ata(web3.Keypair.generate().publicKey)), memo]), want)).toMatch(/not the payment/);
+    expect(await solanaPaymentProblem(msg([...x402, pay]), want)).toMatch(/more than once/);
+    expect(await solanaPaymentProblem(msg([...x402.slice(0, 2), memo]), want)).toBeTruthy();
+    expect(await solanaPaymentProblem(msg([...x402, budget([1, 0, 0, 0, 0])]), want)).toMatch(/compute-budget/);
+    const system = web3.SystemProgram.transfer({ fromPubkey: payer, toPubkey: payTo, lamports: 1 });
+    expect(await solanaPaymentProblem(msg([...x402, system]), want)).toMatch(/not allowed/);
+    const touchesFacilitator = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: feePayer, isSigner: false, isWritable: false }], data: Buffer.from([1]) });
+    expect(await solanaPaymentProblem(msg([...x402, touchesFacilitator]), want)).toMatch(/facilitator appears/);
+    expect(await solanaPaymentProblem(msg(x402, web3.Keypair.generate().publicKey), want)).toMatch(/fee payer/);
   });
 });

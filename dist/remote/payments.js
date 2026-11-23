@@ -2,7 +2,7 @@ import { createPublicKey, randomBytes, verify } from "node:crypto";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
-import { address as solAddress, getBase58Encoder, getCompiledTransactionMessageDecoder, getBase64Decoder, getBase64Encoder, getTransactionDecoder, getTransactionEncoder, } from "@solana/kit";
+import { address as solAddress, getAddressEncoder, getProgramDerivedAddress, getBase58Encoder, getCompiledTransactionMessageDecoder, getBase64Decoder, getBase64Encoder, getTransactionDecoder, getTransactionEncoder, } from "@solana/kit";
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
 import { CHAINS, formatMicros } from "../chains.js";
 import { SpendGuard } from "../limits.js";
@@ -298,78 +298,87 @@ function ed25519Key(addr) {
 }
 /** Puts the wallet's signature into the built payment after checking it is the owner's, over exactly this payment. */
 export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
-/** Phantom adds up to 3 Lighthouse instructions (x402 exact SVM spec: facilitators must allow them). */
-const MAX_WALLET_ADDED = 3;
-/**
- * Checks what the wallet changed in the transaction it signed. Allowed: up to 3 added Lighthouse
- * instructions (Phantom's user protection). Everything we built (fee payer, blockhash, signers and
- * every original instruction, in order) must be unchanged. Returns a reason when it is not.
- */
 const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
-/** A short description of a message's instructions, for error messages. */
-function describeInstructions(m) {
-    return m.instructions
-        .map((ix) => {
-        const p = m.staticAccounts[ix.programAddressIndex];
-        const d = Buffer.from(ix.data ?? []).toString("hex");
-        return `${p.slice(0, 6)}:${d.slice(0, 4)}${d.length > 4 ? "…" : ""}`;
-    })
-        .join(" ");
+const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+async function ataOf(owner, mint, tokenProgram) {
+    const enc = getAddressEncoder();
+    const [pda] = await getProgramDerivedAddress({
+        programAddress: solAddress(ATA_PROGRAM),
+        seeds: [enc.encode(solAddress(owner)), enc.encode(solAddress(tokenProgram)), enc.encode(solAddress(mint))],
+    });
+    return pda;
 }
 /**
- * Checks what the wallet changed in the transaction it signed. Allowed: up to 3 added Lighthouse
- * instructions (Phantom's user protection, which x402 facilitators must accept), and new values in
- * the compute-budget instructions (unit limit / unit price only; they set the network fee the
- * facilitator pays and the facilitator caps them). Everything else we built (fee payer, blockhash,
- * signers and every other instruction, in order) must be unchanged. Returns a reason when it is not.
+ * Checks the transaction the wallet signed by its outcome, as the x402 exact SVM scheme does,
+ * not by comparing it with the one we built (wallets such as Phantom add their own instructions):
+ *  - no address lookup tables (every account must be visible; §2.1.2),
+ *  - only the payer and the facilitator sign, and the facilitator is the fee payer (§2.1.4),
+ *  - the facilitator appears in no instruction (§2.1.1),
+ *  - exactly one TransferChecked, and it is the payment shown to the user: this mint, from the payer,
+ *    to payTo's token account, for exactly this amount (§1.2, §1.4),
+ *  - every other instruction is a compute-budget limit/price, a memo or Lighthouse (the programs the
+ *    reference facilitator accepts for standard wallets, §2.2.1, §3.1), so nothing else can touch the
+ *    payer's funds; with extra.memo, exactly one memo carrying it (§3.1).
+ * Returns the reason when it fails.
  */
-export function walletChangeProblem(original, signed) {
-    const dec = getCompiledTransactionMessageDecoder();
-    const o = dec.decode(original);
-    const s = dec.decode(signed);
-    const detail = () => ` [built: ${describeInstructions(o)}] [signed: ${describeInstructions(s)}]`;
-    if (s.addressTableLookups?.length)
-        return "address lookup tables were added" + detail();
-    if (s.staticAccounts[0] !== o.staticAccounts[0])
-        return "the fee payer changed";
-    if (s.lifetimeToken !== o.lifetimeToken)
-        return "the blockhash changed";
-    if (s.header.numSignerAccounts !== o.header.numSignerAccounts)
-        return "the signers changed";
-    for (let i = 0; i < o.header.numSignerAccounts; i++)
-        if (s.staticAccounts[i] !== o.staticAccounts[i])
-            return "the signers changed";
-    const resolve = (m) => m.instructions.map((ix) => {
-        const program = m.staticAccounts[ix.programAddressIndex];
-        const data = Buffer.from(ix.data ?? []);
-        const budget = program === COMPUTE_BUDGET_PROGRAM && (data[0] === 2 || data[0] === 3) && !(ix.accountIndices ?? []).length;
-        return {
-            program,
-            // Compute-budget limit/price: compared by kind only, so the wallet may change the value.
-            key: budget
-                ? `budget:${data[0]}`
-                : JSON.stringify([program, (ix.accountIndices ?? []).map((i) => m.staticAccounts[i]), data.toString("hex")]),
-        };
-    });
-    const ro = resolve(o);
-    const rs = resolve(s);
-    let j = 0;
-    let added = 0;
-    for (const ix of rs) {
-        if (j < ro.length && ix.key === ro[j].key)
-            j++;
-        else if (ix.program === LIGHTHOUSE_PROGRAM)
-            added++;
-        else
-            return "the wallet changed or added an instruction" + detail();
+export async function solanaPaymentProblem(message, want) {
+    let m;
+    try {
+        m = getCompiledTransactionMessageDecoder().decode(message);
     }
-    if (j !== ro.length)
-        return "an instruction was removed or changed" + detail();
-    if (added > MAX_WALLET_ADDED)
-        return "too many instructions were added" + detail();
+    catch {
+        return "the transaction could not be read";
+    }
+    const keys = m.staticAccounts;
+    if (m.addressTableLookups?.length)
+        return "it uses address lookup tables";
+    if (keys[0] !== want.feePayer)
+        return "the fee payer is not the facilitator";
+    const signers = keys.slice(0, m.header.numSignerAccounts);
+    if (signers.length !== 2 || !signers.includes(want.payer))
+        return "it needs signers other than you and the facilitator";
+    let transfers = 0;
+    const memos = [];
+    for (const ix of m.instructions) {
+        const program = keys[ix.programAddressIndex];
+        const accounts = (ix.accountIndices ?? []).map((i) => keys[i]);
+        const data = Buffer.from(ix.data ?? []);
+        if (program === want.feePayer || accounts.includes(want.feePayer))
+            return "the facilitator appears in an instruction";
+        if (program === COMPUTE_BUDGET_PROGRAM) {
+            if (data[0] !== 2 && data[0] !== 3)
+                return "it has a compute-budget instruction other than limit/price";
+            continue;
+        }
+        if (program === MEMO_PROGRAM) {
+            memos.push(data.toString("utf8"));
+            continue;
+        }
+        if (program === LIGHTHOUSE_PROGRAM)
+            continue;
+        if (program === TOKEN_PROGRAM || program === TOKEN_2022_PROGRAM) {
+            if (data[0] !== 12 || data.length !== 10 || accounts.length < 4)
+                return "it has a token instruction other than the payment";
+            const [, mint, dest, authority] = accounts;
+            const amount = data.readBigUInt64LE(1).toString();
+            if (mint !== want.asset || authority !== want.payer || amount !== want.amount || dest !== (await ataOf(want.payTo, want.asset, program))) {
+                return "it has a token transfer that is not the payment shown";
+            }
+            transfers++;
+            continue;
+        }
+        return `it calls a program that is not allowed (${program})`;
+    }
+    if (transfers !== 1)
+        return transfers ? "it pays more than once" : "it has no payment";
+    if (want.memo !== undefined && (memos.length !== 1 || memos[0] !== want.memo))
+        return "the seller's memo is missing";
     return null;
 }
-async function attachSignature(b, payer, signature, signedTx) {
+async function attachSignature(b, payer, signature, signedTx, want) {
     const payload = fromJson(b.payload);
     if (b.family === "solana") {
         let sig;
@@ -382,7 +391,7 @@ async function attachSignature(b, payer, signature, signedTx) {
         const built = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payload.payload.transaction)));
         if (getBase64Decoder().decode(built.messageBytes) !== b.messageBytes)
             throw new FlowError("用意した支払いと合いません。支払いはしていません。", 500);
-        // The transaction the wallet actually signed: ours, or ours with Phantom's Lighthouse instructions.
+        // The transaction the wallet actually signed (wallets may add their own instructions), checked by its outcome.
         let tx = built;
         if (signedTx) {
             try {
@@ -391,10 +400,10 @@ async function attachSignature(b, payer, signature, signedTx) {
             catch {
                 throw new FlowError("ウォレットが返した取引を読めませんでした。支払いはしていません。");
             }
-            const problem = walletChangeProblem(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
-            if (problem)
-                throw new FlowError(`ウォレットが取引の中身を変えたため、払いません（${problem}）。支払いはしていません。`);
         }
+        const problem = await solanaPaymentProblem(new Uint8Array(tx.messageBytes), want);
+        if (problem)
+            throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}）。支払いはしていません。`);
         if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
             throw new FlowError("この支払いに対する、指定した財布の署名ではありません。支払いはしていません。");
         }
@@ -420,7 +429,12 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
     const b = await deps.store.get(K.build(id));
     if (!b)
         throw new FlowError("支払いの用意が済んでいないか、時間が経ちすぎました。もう一度押してください。", 409);
-    const payment = await attachSignature(b, rec.payer, signature, signedTx);
+    const prepForCheck = fromJson(b.prep);
+    const extra = prepForCheck.selected.raw.extra ?? {};
+    const want = b.family === "solana"
+        ? { payer: rec.payer, feePayer: String(extra.feePayer ?? ""), payTo: rec.payTo, asset: rec.asset, amount: rec.amount, memo: extra.memo }
+        : undefined;
+    const payment = await attachSignature(b, rec.payer, signature, signedTx, want);
     // At most once per request id, from here on.
     if (!(await deps.store.setIfAbsent(K.lock(id), Date.now(), LOCK_TTL_S)))
         throw new FlowError("この支払いは、いま処理しています。", 409);
