@@ -324,6 +324,25 @@ async function ataOf(owner, mint, tokenProgram) {
  *    payer's funds; with extra.memo, exactly one memo carrying it (§3.1).
  * Returns the reason when it fails.
  */
+/** What a signed Solana transaction contains, for error messages: each instruction's program, first data byte and whether it reads the fee payer. */
+export function describeSolanaMessage(message, feePayer) {
+    try {
+        const m = getCompiledTransactionMessageDecoder().decode(message);
+        const keys = m.staticAccounts;
+        return m.instructions
+            .map((ix, i) => {
+            const program = keys[ix.programAddressIndex];
+            const name = { [COMPUTE_BUDGET_PROGRAM]: "budget", [MEMO_PROGRAM]: "memo", [LIGHTHOUSE_PROGRAM]: "lighthouse", [TOKEN_PROGRAM]: "token", [TOKEN_2022_PROGRAM]: "token2022" }[program] ??
+                program.slice(0, 8);
+            const reads = (ix.accountIndices ?? []).some((k) => keys[k] === feePayer) ? "+feePayer" : "";
+            return `${i}:${name}(${ix.data?.[0] ?? "-"})${reads}`;
+        })
+            .join(" ");
+    }
+    catch {
+        return "unreadable";
+    }
+}
 export async function solanaPaymentProblem(message, want) {
     let m;
     try {
@@ -346,6 +365,8 @@ export async function solanaPaymentProblem(message, want) {
         const program = keys[ix.programAddressIndex];
         const accounts = (ix.accountIndices ?? []).map((i) => keys[i]);
         const data = Buffer.from(ix.data ?? []);
+        // §2.1.1 for every instruction, Lighthouse included: PayAI refuses a Lighthouse instruction that
+        // reads the fee payer (fee_payer_transferring_funds), so sending it would only fail there.
         if (program === want.feePayer || accounts.includes(want.feePayer))
             return "the facilitator appears in an instruction";
         if (program === COMPUTE_BUDGET_PROGRAM) {
@@ -402,8 +423,11 @@ async function attachSignature(b, payer, signature, signedTx, want) {
             }
         }
         const problem = await solanaPaymentProblem(new Uint8Array(tx.messageBytes), want);
-        if (problem)
-            throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}）。支払いはしていません。`);
+        if (problem) {
+            const shape = describeSolanaMessage(new Uint8Array(tx.messageBytes), want.feePayer);
+            console.log(`[agentpay402] refused signed payment: ${problem} | ${shape}`);
+            throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${shape}）。支払いはしていません。`);
+        }
         if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
             throw new FlowError("この支払いに対する、指定した財布の署名ではありません。支払いはしていません。");
         }
@@ -455,6 +479,8 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
             ...(err instanceof PaymentError ? err.details : {}),
         };
     }
+    if (want)
+        result.signed_transaction_shape = describeSolanaMessage(signedMessageOf(payment), want.feePayer);
     if (result.paid !== false)
         await addSpent(deps.store, rec.payer, BigInt(prep.selected.priceMicros ?? 0n));
     await finishWith(rec, result, deps);
@@ -463,6 +489,24 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
         paid: result.paid,
         explorer: result.tx?.explorer ?? null,
         message: result.message,
+        seller_error: result.status === "rejected_by_seller" ? sellerError(result.body) : undefined,
+        signed_transaction_shape: result.signed_transaction_shape,
     };
+}
+function signedMessageOf(payment) {
+    const tx = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payment.payload.payload.transaction)));
+    return new Uint8Array(tx.messageBytes);
+}
+/** The seller's / facilitator's reason from a 402 body, if it gives one. */
+function sellerError(body) {
+    if (typeof body !== "string")
+        return undefined;
+    try {
+        const j = JSON.parse(body);
+        return typeof j.error === "string" ? j.error.slice(0, 300) : undefined;
+    }
+    catch {
+        return undefined;
+    }
 }
 export { describeRequirement };
