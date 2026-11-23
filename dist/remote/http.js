@@ -3,6 +3,7 @@ import { z } from "zod";
 import { VERSION } from "../server.js";
 import { registerReadOnlyTools, requestShape, ResultError, run } from "../tools.js";
 import { PaymentError } from "../x402/request.js";
+import { homePage } from "./home.js";
 import { messagePage, approvalPage } from "./page.js";
 import { ParamError, parseParams } from "./params.js";
 import { FlowError, buildPayment, getResult, pageRecord, rejectPayment, requesterFor, requestPayment, signAndPay, } from "./payments.js";
@@ -64,6 +65,9 @@ export async function handleMcp(req) {
         serverInfo: { name: "agentpay402", version: VERSION },
     });
     return handler(req);
+}
+export async function handleHome(req) {
+    return new Response(homePage(getPublicOrigin(req)), { headers: htmlHeaders });
 }
 const htmlHeaders = {
     "content-type": "text/html; charset=utf-8",
