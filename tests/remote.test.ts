@@ -199,6 +199,14 @@ describe("remote: what Phantom may change in a Solana payment", async () => {
     expect(walletChangeProblem(original, msg([lighthouse, transfer, lighthouse, memo, lighthouse]))).toBeNull();
   });
 
+  it("accepts new compute-budget values, not other compute-budget instructions", () => {
+    const CB = new web3.PublicKey("ComputeBudget111111111111111111111111111111");
+    const budget = (d: number[]) => new web3.TransactionInstruction({ programId: CB, keys: [], data: Buffer.from(d) });
+    const built = msg([budget([2, 1, 0, 0, 0]), budget([3, 1, 0, 0, 0, 0, 0, 0, 0]), transfer, memo]);
+    expect(walletChangeProblem(built, msg([budget([2, 9, 9, 0, 0]), budget([3, 5, 0, 0, 0, 0, 0, 0, 0]), transfer, memo, lighthouse]))).toBeNull();
+    expect(walletChangeProblem(built, msg([budget([2, 1, 0, 0, 0]), budget([3, 1, 0, 0, 0, 0, 0, 0, 0]), budget([1, 0, 0, 0, 0]), transfer, memo]))).toMatch(/changed or added/);
+  });
+
   it("refuses any other change", () => {
     expect(walletChangeProblem(original, msg([transfer, memo, lighthouse, lighthouse, lighthouse, lighthouse]))).toMatch(/too many/);
     expect(walletChangeProblem(original, msg([transfer, memo, ix(TOKEN, [3])]))).toMatch(/changed or added/);

@@ -305,12 +305,31 @@ const MAX_WALLET_ADDED = 3;
  * instructions (Phantom's user protection). Everything we built (fee payer, blockhash, signers and
  * every original instruction, in order) must be unchanged. Returns a reason when it is not.
  */
+const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
+/** A short description of a message's instructions, for error messages. */
+function describeInstructions(m) {
+    return m.instructions
+        .map((ix) => {
+        const p = m.staticAccounts[ix.programAddressIndex];
+        const d = Buffer.from(ix.data ?? []).toString("hex");
+        return `${p.slice(0, 6)}:${d.slice(0, 4)}${d.length > 4 ? "…" : ""}`;
+    })
+        .join(" ");
+}
+/**
+ * Checks what the wallet changed in the transaction it signed. Allowed: up to 3 added Lighthouse
+ * instructions (Phantom's user protection, which x402 facilitators must accept), and new values in
+ * the compute-budget instructions (unit limit / unit price only; they set the network fee the
+ * facilitator pays and the facilitator caps them). Everything else we built (fee payer, blockhash,
+ * signers and every other instruction, in order) must be unchanged. Returns a reason when it is not.
+ */
 export function walletChangeProblem(original, signed) {
     const dec = getCompiledTransactionMessageDecoder();
     const o = dec.decode(original);
     const s = dec.decode(signed);
+    const detail = () => ` [built: ${describeInstructions(o)}] [signed: ${describeInstructions(s)}]`;
     if (s.addressTableLookups?.length)
-        return "address lookup tables were added";
+        return "address lookup tables were added" + detail();
     if (s.staticAccounts[0] !== o.staticAccounts[0])
         return "the fee payer changed";
     if (s.lifetimeToken !== o.lifetimeToken)
@@ -320,14 +339,18 @@ export function walletChangeProblem(original, signed) {
     for (let i = 0; i < o.header.numSignerAccounts; i++)
         if (s.staticAccounts[i] !== o.staticAccounts[i])
             return "the signers changed";
-    const resolve = (m) => m.instructions.map((ix) => ({
-        program: m.staticAccounts[ix.programAddressIndex],
-        key: JSON.stringify([
-            m.staticAccounts[ix.programAddressIndex],
-            (ix.accountIndices ?? []).map((i) => m.staticAccounts[i]),
-            Buffer.from(ix.data ?? []).toString("hex"),
-        ]),
-    }));
+    const resolve = (m) => m.instructions.map((ix) => {
+        const program = m.staticAccounts[ix.programAddressIndex];
+        const data = Buffer.from(ix.data ?? []);
+        const budget = program === COMPUTE_BUDGET_PROGRAM && (data[0] === 2 || data[0] === 3) && !(ix.accountIndices ?? []).length;
+        return {
+            program,
+            // Compute-budget limit/price: compared by kind only, so the wallet may change the value.
+            key: budget
+                ? `budget:${data[0]}`
+                : JSON.stringify([program, (ix.accountIndices ?? []).map((i) => m.staticAccounts[i]), data.toString("hex")]),
+        };
+    });
     const ro = resolve(o);
     const rs = resolve(s);
     let j = 0;
@@ -338,12 +361,12 @@ export function walletChangeProblem(original, signed) {
         else if (ix.program === LIGHTHOUSE_PROGRAM)
             added++;
         else
-            return "the wallet changed or added an instruction";
+            return "the wallet changed or added an instruction" + detail();
     }
     if (j !== ro.length)
-        return "an instruction was removed or changed";
+        return "an instruction was removed or changed" + detail();
     if (added > MAX_WALLET_ADDED)
-        return "too many instructions were added";
+        return "too many instructions were added" + detail();
     return null;
 }
 async function attachSignature(b, payer, signature, signedTx) {
