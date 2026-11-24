@@ -16,7 +16,7 @@ import { CHAINS, SOLANA } from "../chains.js";
  * simulation of the whole transaction, settlement) is the official code, unchanged.
  *
  * Policy, to keep the fee payer's SOL for our own sellers: only payTo addresses listed in
- * FACILITATOR_PAY_TO, only mainnet USDC, and at most FACILITATOR_DAILY_MAX settlements a day.
+ * FACILITATOR_PAY_TO, only mainnet USDC, and at most FACILITATOR_DAILY_MAX successful settlements a day.
  */
 export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
 const DEFAULT_DAILY_MAX = 200;
@@ -88,8 +88,21 @@ export async function settle(setup, payload, req, store) {
     const problem = policyProblem(setup, req);
     if (problem)
         return { success: false, errorReason: problem, transaction: "", network: req.network, payer: "" };
+    // Reserve a slot first (concurrent settles cannot pass the limit together), give it back unless it settled.
     const n = await store.incr(dayKey(), 1, 2 * 24 * 3600);
-    if (n > setup.dailyMax)
+    if (n > setup.dailyMax) {
+        await store.incr(dayKey(), -1, 2 * 24 * 3600);
         return { success: false, errorReason: "daily_limit_reached", transaction: "", network: req.network, payer: "" };
-    return setup.facilitator.settle(payload, req);
+    }
+    let result;
+    try {
+        result = await setup.facilitator.settle(payload, req);
+    }
+    catch (err) {
+        await store.incr(dayKey(), -1, 2 * 24 * 3600);
+        throw err;
+    }
+    if (!result.success)
+        await store.incr(dayKey(), -1, 2 * 24 * 3600);
+    return result;
 }

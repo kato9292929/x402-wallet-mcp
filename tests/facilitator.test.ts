@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ExactSvmScheme } from "@x402/svm/exact/facilitator";
 import { CHAINS, SOLANA } from "../src/chains.js";
-import { LIGHTHOUSE_PROGRAM, phantomAwareScheme, policyProblem } from "../src/facilitator/index.js";
+import { LIGHTHOUSE_PROGRAM, phantomAwareScheme, policyProblem, settle } from "../src/facilitator/index.js";
+import { memoryStore } from "../src/remote/store.js";
 
 const web3 = await import("@solana/web3.js");
 const P = (k: string) => new web3.PublicKey(k);
@@ -120,5 +121,17 @@ describe("facilitator: policy", () => {
     expect(policyProblem(setup, { ...requirements, payTo: feePayer.toBase58() })).toBe("pay_to_not_allowed");
     expect(policyProblem(setup, { ...requirements, network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" })).toBe("unsupported_network");
     expect(policyProblem(setup, { ...requirements, asset: feePayer.toBase58() })).toBe("unsupported_asset");
+  });
+});
+
+describe("facilitator: daily limit", () => {
+  it("counts only successful settlements", async () => {
+    const store = memoryStore();
+    let ok = false;
+    const setup = { payTo: new Set([payTo.toBase58()]), dailyMax: 1, facilitator: { settle: async () => ({ success: ok }) } } as any;
+    expect(await settle(setup, {} as any, requirements, store)).toMatchObject({ success: false });
+    ok = true;
+    expect(await settle(setup, {} as any, requirements, store)).toMatchObject({ success: true });
+    expect(await settle(setup, {} as any, requirements, store)).toMatchObject({ success: false, errorReason: "daily_limit_reached" });
   });
 });
