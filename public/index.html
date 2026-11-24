@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>agentpay — x402 payments, approved by you</title>
+<meta name="description" content="agentpay lets Claude pay for x402 APIs from your own wallet. Every payment is checked first and signed by you in Phantom.">
+<meta name="theme-color" content="#151517">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..600&family=Newsreader:opsz,wght@6..72,300..500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#151517; --bg-2:#1b1b1e; --ink:#ededed; --muted:#a1a1a1; --dim:#6e6e73;
+  --line:rgba(255,255,255,.12); --chip:rgba(255,255,255,.04);
+  --gutter:clamp(16px,2.6vw,28px);
+  --sans:"Geist",ui-sans-serif,system-ui,"Hiragino Sans","Noto Sans JP",sans-serif;
+  --serif:"Newsreader","Times New Roman",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid #fff;outline-offset:3px;border-radius:6px}
+
+.hero{position:relative;min-height:100vh;min-height:100svh;isolation:isolate;overflow:hidden;background:var(--bg)}
+.stage{position:absolute;inset:0;z-index:-1;touch-action:pan-y}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#fx{mix-blend-mode:screen}
+
+.nav{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:14px var(--gutter);height:64px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand-slash{color:var(--dim);font-size:22px;font-weight:300;transform:translateY(-1px)}
+.brand-name{font-family:var(--serif);font-size:24px;font-weight:400;letter-spacing:-.01em;line-height:1}
+.links{display:flex;gap:20px;margin-left:12px}
+.links a{font-size:14px;color:var(--muted);transition:color .2s}
+.links a:hover{color:var(--ink)}
+.right{display:flex;align-items:center;gap:8px}
+.search{display:flex;align-items:center;justify-content:space-between;gap:28px;height:36px;padding:0 6px 0 12px;min-width:172px;border:1px solid var(--line);border-radius:8px;background:var(--chip);font-size:14px;color:var(--muted);transition:border-color .2s,color .2s}
+.search:hover{border-color:rgba(255,255,255,.22);color:var(--ink)}
+kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:2px 5px;background:rgba(255,255,255,.03)}
+.ask{display:inline-flex;align-items:center;height:36px;padding:0 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-weight:500;background:var(--chip);transition:background .2s,border-color .2s}
+.ask:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22)}
+.icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:8px;transition:background .2s}
+.icon-btn:hover{background:rgba(255,255,255,.06)}
+.menu{display:none}
+
+.copy{position:relative;z-index:1;min-height:calc(100svh - 64px);display:flex;flex-direction:column;justify-content:center;padding:0 var(--gutter) 64px;max-width:560px;pointer-events:none}
+.copy>*{pointer-events:auto}
+.wordmark{font-family:var(--serif);font-weight:400;font-size:clamp(72px,8.6vw,124px);line-height:.9;letter-spacing:-.035em;font-variation-settings:"opsz" 72;margin-bottom:clamp(14px,1.8vw,22px)}
+.lede{font-size:clamp(28px,3.05vw,44px);line-height:1.2;font-weight:400;letter-spacing:-.025em;margin-bottom:clamp(24px,2.6vw,36px)}
+.lede span{display:block}
+.tabs{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:14px}
+.tab{color:var(--dim);padding:2px 0;transition:color .2s}
+.tab:hover{color:var(--muted)}
+.tab[aria-selected="true"]{color:var(--ink)}
+.dot{color:var(--dim);font-size:11px}
+.cmd{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:440px;padding-top:14px;font-size:15px;line-height:1.5}
+.cmd::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,rgba(255,255,255,.28),rgba(255,255,255,.08) 70%,transparent)}
+.cmd-text{transition:opacity .18s,transform .18s;overflow-wrap:anywhere}
+.cmd-text.swap{opacity:0;transform:translateY(3px)}
+.copy-btn{flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:7px;color:var(--dim);transition:color .2s,background .2s}
+.copy-btn:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+.copy-btn svg{grid-area:1/1}
+.copy-btn .ok{display:none}
+.copy-btn.done .ok{display:block}
+.copy-btn.done .cp{display:none}
+
+.rise{opacity:0;transform:translateY(12px);animation:rise .9s cubic-bezier(.2,.7,.2,1) forwards}
+.copy>.rise:nth-child(2){animation-delay:.08s}
+.copy>.rise:nth-child(3){animation-delay:.16s}
+.copy>.rise:nth-child(4){animation-delay:.24s}
+@keyframes rise{to{opacity:1;transform:none}}
+.stage{opacity:0;animation:fade 1.6s .2s ease forwards}
+@keyframes fade{to{opacity:1}}
+
+@media (max-width:960px){.search{min-width:0;gap:14px}}
+@media (max-width:820px){
+  .links,.search,.ask{display:none}
+  .menu{display:grid}
+  .copy{justify-content:flex-start;min-height:0;padding-top:clamp(28px,7svh,64px);padding-bottom:0;max-width:100%}
+  .hero{min-height:max(100svh,720px)}
+}
+@media (max-width:420px){.tabs{font-size:14px;gap:6px}.cmd{font-size:14px}}
+@media (prefers-reduced-motion:reduce){
+  .rise,.stage{animation:none;opacity:1;transform:none}
+  .cmd-text{transition:none}
+}
+</style>
+</head>
+<body>
+<section class="hero" aria-label="agentpay">
+  <div class="stage" aria-hidden="true"><canvas id="gl"></canvas><canvas id="fx"></canvas></div>
+  <header class="nav">
+    <div class="brand">
+      <a href="/" aria-label="agentpay home"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22 20H2z" fill="#fff"/></svg></a>
+      <span class="brand-slash">/</span>
+      <a class="brand-name" href="/">agentpay</a>
+      <nav class="links" aria-label="Main">
+        <a href="https://github.com/kato9292929/x402-wallet-mcp#readme">Docs</a>
+        <a href="https://probe.x402jp.com">Seller Probe</a>
+      </nav>
+    </div>
+    <div class="right">
+      <a class="search" href="https://jin.x402jp.com/api/jin/series"><span>Try an API…</span><kbd>x402</kbd></a>
+      <a class="ask" href="https://claude.ai/new">Ask Claude</a>
+      <a class="icon-btn" href="https://github.com/kato9292929/x402-wallet-mcp" aria-label="GitHub">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <button class="icon-btn menu" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 8h16M4 16h16"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="copy">
+    <h1 class="wordmark rise">agentpay</h1>
+    <p class="lede rise"><span>Claude の支払いを、</span><span>あなたの財布で承認。</span></p>
+    <div class="tabs rise" role="tablist" aria-label="Connect method">
+      <button class="tab" role="tab" aria-selected="true" data-cmd="https://agentpay.x402jp.com/mcp">Claude</button>
+      <span class="dot">·</span>
+      <button class="tab" role="tab" aria-selected="false" data-cmd="claude mcp add --transport http agentpay https://agentpay.x402jp.com/mcp">Claude Code</button>
+      <span class="dot">·</span>
+      <button class="tab" role="tab" aria-selected="false" data-cmd="https://jin.x402jp.com/api/jin/series を買って">Prompt</button>
+      <span class="dot">·</span>
+      <button class="tab" role="tab" aria-selected="false" data-cmd="request_x402_payment → 承認リンク → get_x402_result">Tools</button>
+    </div>
+    <div class="cmd rise">
+      <span class="cmd-text" id="cmd">https://agentpay.x402jp.com/mcp</span>
+      <button class="copy-btn" id="copy" aria-label="Copy command">
+        <svg class="cp" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>
+        <svg class="ok" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </button>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  var cmd = document.getElementById("cmd");
+  var tabs = document.querySelectorAll(".tab");
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (t) { t.setAttribute("aria-selected", t === tab ? "true" : "false"); });
+      cmd.classList.add("swap");
+      setTimeout(function () { cmd.textContent = tab.dataset.cmd; cmd.classList.remove("swap"); }, 160);
+    });
+  });
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", async function () {
+    try { await navigator.clipboard.writeText(cmd.textContent); } catch (e) {}
+    btn.classList.add("done");
+    setTimeout(function () { btn.classList.remove("done"); }, 1400);
+  });
+})();
+</script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+/*
+ * Glass prism and light, after vercel-labs/vgpu
+ * (apps/docs/app/[lang]/(home)/components/prism-background) — MIT License, Copyright (c) Vercel, Inc.
+ * Re-implemented here with three.js and a 2D canvas.
+ */
+import * as THREE from "three";
+
+const stage = document.querySelector(".stage");
+const glCanvas = document.getElementById("gl");
+const fx = document.getElementById("fx");
+const copyEl = document.querySelector(".copy");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------------------------------------------------------------- layout
+let W = 0, H = 0, dpr = 1, ldpr = 1, mobile = false, S = 300, cx = 0, cy = 0, R = 0;
+let tri = [];      // plane triangle (y down): top, right, left
+let edges = [];    // {a, b, n (outward)}
+function layout() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  mobile = W < 820;
+  ldpr = mobile ? Math.min(dpr, 1.5) : dpr;
+  if (!mobile) {
+    S = Math.min(W * 0.36, H * 0.62);
+    cx = 0.66 * W; cy = 0.53 * H;
+  } else {
+    S = Math.min(W * 0.72, H * 0.40, 400);
+    const cb = copyEl.getBoundingClientRect().bottom - r.top;
+    cx = W / 2;
+    cy = Math.max(cb + 30 + S * 0.62, (cb + 30 + H) / 2);
+  }
+  R = S / Math.sqrt(3);
+  tri = [[cx, cy - R], [cx + S / 2, cy + R / 2], [cx - S / 2, cy + R / 2]];
+  edges = [0, 1, 2].map((i) => {
+    const a = tri[i], b = tri[(i + 1) % 3];
+    let nx = b[1] - a[1], ny = -(b[0] - a[0]);
+    const l = Math.hypot(nx, ny); nx /= l; ny /= l;
+    // make it point away from the centroid
+    const mx = (a[0] + b[0]) / 2 - cx, my = (a[1] + b[1]) / 2 - cy;
+    if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+    return { a, b, n: [nx, ny] };
+  });
+  for (const c of [fx, off]) { c.width = Math.round(W * ldpr); c.height = Math.round(H * ldpr); }
+  if (gl) gl.resize();
+}
+
+// ---------------------------------------------------------------- spectrum
+const NL = 72;
+const lambdas = Array.from({ length: NL }, (_, i) => 410 + (285 * i) / (NL - 1));
+function spectrum(l) {
+  let r, g, b;
+  if (l < 440) { r = (440 - l) / 60 * 0.6; g = 0; b = 1; }
+  else if (l < 490) { r = 0; g = (l - 440) / 50; b = 1; }
+  else if (l < 510) { r = 0; g = 1; b = (510 - l) / 20; }
+  else if (l < 580) { r = (l - 510) / 70; g = 1; b = 0; }
+  else if (l < 645) { r = 1; g = (645 - l) / 65; b = 0; }
+  else { r = 1; g = 0; b = 0; }
+  const f = l < 420 ? 0.35 + 0.65 * (l - 380) / 40 : l > 660 ? 0.35 + 0.65 * (700 - l) / 40 : 1;
+  return [r * f, g * f, b * f];
+}
+const vivid = lambdas.map(spectrum);
+const sum = vivid.reduce((s, c) => [s[0] + c[0], s[1] + c[1], s[2] + c[2]], [0, 0, 0]);
+const balanced = vivid.map((c) => {
+  const bal = [c[0] / sum[0], c[1] / sum[1], c[2] / sum[2]];
+  const w = Math.max(bal[0], bal[1], bal[2]) || 1e-6;
+  return { rgb: bal.map((v) => v / w), w };   // Σ rgb·w = white
+});
+const iorOf = (l) => 1.2 + 0.1 / ((l / 1000) ** 2);
+
+// ---------------------------------------------------------------- 2D ray tracing
+function hitEdge(o, d, skip) {
+  let best = Infinity, face = -1, p = null;
+  for (let i = 0; i < 3; i++) {
+    if (i === skip) continue;
+    const { a, b } = edges[i];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const den = d[0] * ey - d[1] * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const qx = a[0] - o[0], qy = a[1] - o[1];
+    const t = (qx * ey - qy * ex) / den;
+    const u = (qx * d[1] - qy * d[0]) / den;
+    if (t > 1e-6 && u >= 0 && u <= 1 && t < best) { best = t; face = i; p = [o[0] + d[0] * t, o[1] + d[1] * t]; }
+  }
+  return face < 0 ? null : { t: best, face, p };
+}
+function refract(d, n, eta) {          // n faces against d
+  const cosi = -(d[0] * n[0] + d[1] * n[1]);
+  const k = 1 - eta * eta * (1 - cosi * cosi);
+  if (k < 0) return null;
+  const c = eta * cosi - Math.sqrt(k);
+  return { t: [eta * d[0] + c * n[0], eta * d[1] + c * n[1]], cosi, cost: Math.sqrt(k) };
+}
+function trace(o, d, ior, energy, inside, depth, key, skip, out, hits) {
+  const far = 1.5 * Math.hypot(W, H);
+  const h = hitEdge(o, d, skip);
+  if (!h) { out.push({ key: key + "O", a: o, b: [o[0] + d[0] * far, o[1] + d[1] * far], e: energy, inside: false, outgoing: true }); return; }
+  out.push({ key, a: o, b: h.p, e: energy, inside, outgoing: false });
+  hits.push({ face: h.face, p: h.p, e: energy });
+  if (depth >= 7) return;
+  const N = edges[h.face].n;
+  const nf = inside ? [-N[0], -N[1]] : N;         // facing the incoming ray
+  const n1 = inside ? ior : 1, n2 = inside ? 1 : ior;
+  const r = refract(d, nf, n1 / n2);
+  const cosi = -(d[0] * nf[0] + d[1] * nf[1]);
+  const refl = [d[0] + 2 * cosi * nf[0], d[1] + 2 * cosi * nf[1]];
+  if (!r) {   // total internal reflection
+    trace(h.p, refl, ior, energy, inside, depth + 1, key + "R" + h.face, h.face, out, hits);
+    return;
+  }
+  const rs = ((n1 * r.cosi - n2 * r.cost) / (n1 * r.cosi + n2 * r.cost)) ** 2;
+  const rp = ((n1 * r.cost - n2 * r.cosi) / (n1 * r.cost + n2 * r.cosi)) ** 2;
+  const F = (rs + rp) / 2;
+  if (energy * (1 - F) > 0.08) trace(h.p, r.t, ior, energy * (1 - F), !inside, depth + 1, key + "T" + h.face, h.face, out, hits);
+  if (energy * F > 0.12) trace(h.p, refl, ior, energy * F, inside, depth + 1, key + "R" + h.face, h.face, out, hits);
+}
+
+// lamp (vgpu lampForIncidence): from the right, aimed at the right face
+const aim = [0.5, 0.5], aimT = [0.5, 0.5];
+function lamp() {
+  const y = aim[0], x = aim[1];
+  const deg = y < 0.5 ? -35 + (60 + 35) * (y / 0.5) : 60 + 15 * ((y - 0.5) / 0.5);
+  const a = (deg * Math.PI) / 180;
+  const N = edges[0].n, inN = [-N[0], -N[1]];
+  const dir = [inN[0] * Math.cos(a) - inN[1] * Math.sin(a), inN[0] * Math.sin(a) + inN[1] * Math.cos(a)];
+  const u = 0.08 + 0.84 * x;
+  const { a: p0, b: p1 } = edges[0];
+  const entry = [p0[0] + (p1[0] - p0[0]) * u, p0[1] + (p1[1] - p0[1]) * u];
+  const far = 1.5 * Math.hypot(W, H);
+  return { dir, entry, src: [entry[0] - dir[0] * far, entry[1] - dir[1] * far] };
+}
+
+// ---------------------------------------------------------------- light canvas
+const off = document.createElement("canvas");
+const octx = off.getContext("2d");
+const fctx = fx.getContext("2d");
+let toScreen = (p) => p;     // replaced by the 3D projection when WebGL2 runs
+const motes = Array.from({ length: 70 }, () => ({ t: Math.random(), s: Math.random() * 2 - 1, r: 0.5 + Math.random() * 1.1, ph: Math.random() * 6.28, sp: 0.02 + Math.random() * 0.03 }));
+
+function drawLight(time, dt) {
+  const ctx = octx;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, off.width, off.height);
+  ctx.setTransform(ldpr, 0, 0, ldpr, 0, 0);
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const L = lamp();
+  const k = mobile ? 0.8 : 1;
+  const s0 = toScreen(L.src), e0 = toScreen(L.entry);
+
+  // incoming beam
+  ctx.strokeStyle = "rgba(255,255,255,.3)"; ctx.lineWidth = 12 * k;
+  ctx.beginPath(); ctx.moveTo(s0[0], s0[1]); ctx.lineTo(e0[0], e0[1]); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,1)"; ctx.lineWidth = 4.5 * k;
+  ctx.beginPath(); ctx.moveTo(s0[0], s0[1]); ctx.lineTo(e0[0], e0[1]); ctx.stroke();
+
+  // dust motes drifting toward the prism
+  const len = Math.hypot(W, H) * 0.7, px = -L.dir[1], py = L.dir[0];
+  for (const m of motes) {
+    if (!reduceMotion) m.t -= m.sp * dt;
+    if (m.t < 0) { m.t += 1; m.s = Math.random() * 2 - 1; }
+    const spread = 6 + m.t * 70;
+    const p = [L.entry[0] - L.dir[0] * m.t * len + px * m.s * spread, L.entry[1] - L.dir[1] * m.t * len + py * m.s * spread];
+    const q = toScreen(p);
+    const a = (0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * 2 + m.ph))) * 0.75;
+    ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(q[0], q[1], m.r, 0, 6.2832); ctx.fill();
+  }
+
+  // trace every wavelength, group the segments by path
+  const groups = new Map();
+  let midHits = [];
+  for (let i = 0; i < NL; i++) {
+    const segs = [], hits = [];
+    trace(L.src, L.dir, iorOf(lambdas[i]), 1, false, 0, "", -1, segs, hits);
+    if (i === NL >> 1) midHits = hits;
+    for (const sg of segs) {
+      if (sg.key === "") continue;            // the incoming beam is drawn above
+      let g = groups.get(sg.key);
+      if (!g) { g = new Array(NL); groups.set(sg.key, g); }
+      g[i] = sg;
+    }
+  }
+
+  for (const g of groups.values()) {
+    for (let i = 0; i < NL; i++) {
+      const a = g[i]; if (!a) continue;
+      const A = toScreen(a.a), B = toScreen(a.b);
+      // band to the next wavelength
+      const b = g[i + 1];
+      if (b) {
+        const C = toScreen(b.b), D = toScreen(b.a);
+        const c = vivid[i];
+        const alpha = a.e * (a.inside ? 0.5 : 0.78);
+        const rgb = `${(c[0] * 255) | 0},${(c[1] * 255) | 0},${(c[2] * 255) | 0}`;
+        if (a.outgoing) {
+          const gr = ctx.createLinearGradient(A[0], A[1], B[0], B[1]);
+          gr.addColorStop(0, `rgba(${rgb},${alpha})`);
+          gr.addColorStop(0.3, `rgba(${rgb},${alpha * 0.75})`);
+          gr.addColorStop(0.7, `rgba(${rgb},${alpha * 0.25})`);
+          gr.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = gr;
+        } else ctx.fillStyle = `rgba(${rgb},${alpha})`;
+        ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineTo(C[0], C[1]); ctx.lineTo(D[0], D[1]); ctx.closePath(); ctx.fill();
+      }
+      // white-balanced core line
+      const bc = balanced[i];
+      const al = Math.min(1, bc.w * a.e * 2.2);
+      const col = `${(bc.rgb[0] * 255) | 0},${(bc.rgb[1] * 255) | 0},${(bc.rgb[2] * 255) | 0}`;
+      if (a.outgoing) {
+        const gr = ctx.createLinearGradient(A[0], A[1], B[0], B[1]);
+        gr.addColorStop(0, `rgba(${col},${al})`); gr.addColorStop(0.3, `rgba(${col},${al * 0.75})`);
+        gr.addColorStop(0.7, `rgba(${col},${al * 0.25})`); gr.addColorStop(1, `rgba(${col},0)`);
+        ctx.strokeStyle = gr;
+      } else ctx.strokeStyle = `rgba(${col},${al})`;
+      ctx.lineWidth = a.inside ? 4 : 3.4;
+      ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke();
+    }
+  }
+
+  // edge glints where the beam crosses a face
+  const seen = new Set();
+  for (const h of midHits) {
+    const key = h.face + ":" + Math.round(h.p[0]) + ":" + Math.round(h.p[1]);
+    if (seen.has(key) || h.e < 0.15) continue; seen.add(key);
+    const P = toScreen(h.p), ea = toScreen(edges[h.face].a), eb = toScreen(edges[h.face].b);
+    const gr = ctx.createRadialGradient(P[0], P[1], 0, P[0], P[1], 0.2 * S);
+    gr.addColorStop(0, `rgba(255,255,255,${Math.min(1, h.e)})`); gr.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.strokeStyle = gr; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ea[0], ea[1]); ctx.lineTo(eb[0], eb[1]); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(P[0], P[1], 2.6, 0, 6.2832); ctx.fill();
+  }
+
+  // soft bloom into #fx (no unblurred pass)
+  fctx.setTransform(1, 0, 0, 1, 0, 0);
+  fctx.globalCompositeOperation = "source-over";
+  fctx.clearRect(0, 0, fx.width, fx.height);
+  fctx.globalCompositeOperation = "lighter";
+  for (const [blur, a] of [[34, 0.6], [12, 0.9], [3.2, 1]]) bloomPass(blur * ldpr, a);
+  fctx.globalAlpha = 1; fctx.filter = "none";
+  if (!gl) drawOutline();
+}
+
+const canFilter = (() => { const c = document.createElement("canvas").getContext("2d"); c.filter = "blur(2px)"; return c.filter === "blur(2px)"; })();
+const scaled = [16, 6, 2].map(() => document.createElement("canvas"));
+function bloomPass(blur, a) {
+  fctx.globalAlpha = a;
+  if (canFilter) { fctx.filter = `blur(${blur}px)`; fctx.drawImage(off, 0, 0); return; }
+  const idx = blur > 20 ? 0 : blur > 6 ? 1 : 2, f = [16, 6, 2][idx], c = scaled[idx];
+  c.width = Math.max(1, Math.round(off.width / f)); c.height = Math.max(1, Math.round(off.height / f));
+  const x = c.getContext("2d"); x.clearRect(0, 0, c.width, c.height); x.imageSmoothingEnabled = true;
+  x.drawImage(off, 0, 0, c.width, c.height);
+  fctx.imageSmoothingEnabled = true; fctx.drawImage(c, 0, 0, fx.width, fx.height);
+}
+function drawOutline() {
+  fctx.globalCompositeOperation = "source-over"; fctx.setTransform(ldpr, 0, 0, ldpr, 0, 0);
+  fctx.strokeStyle = "rgba(255,255,255,.35)"; fctx.lineWidth = 1;
+  fctx.beginPath(); tri.forEach((p, i) => (i ? fctx.lineTo(p[0], p[1]) : fctx.moveTo(p[0], p[1]))); fctx.closePath(); fctx.stroke();
+}
+
+// ---------------------------------------------------------------- 3D glass
+let gl = null;
+function prismGeometry(side) {
+  const depth = side * 0.3 / 0.57, r = side * 0.008 / 0.57;
+  const inrad = side / (2 * Math.sqrt(3));
+  const k = (inrad - r) / inrad;                     // inner triangle (Minkowski core)
+  const Rc = side / Math.sqrt(3) * k;
+  const core = [[0, Rc], [side / 2 * k, -Rc / 2], [-side / 2 * k, -Rc / 2]];
+  const enorm = [0, 1, 2].map((i) => {
+    const a = core[i], b = core[(i + 1) % 3];
+    let nx = b[1] - a[1], ny = -(b[0] - a[0]); const l = Math.hypot(nx, ny); nx /= l; ny /= l;
+    if (nx * (a[0] + b[0]) + ny * (a[1] + b[1]) < 0) { nx = -nx; ny = -ny; }
+    return [nx, ny];
+  });
+  // contour: corner arcs (4 segments) + edges (16 segments)
+  const contour = [];
+  for (let c = 0; c < 3; c++) {
+    const nPrev = enorm[(c + 2) % 3], nNext = enorm[c];
+    let a0 = Math.atan2(nPrev[1], nPrev[0]), a1 = Math.atan2(nNext[1], nNext[0]);
+    while (a1 < a0) a1 += Math.PI * 2;
+    if (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
+    for (let s = 0; s <= 4; s++) { const a = a0 + (a1 - a0) * s / 4; contour.push({ p: core[c], n: [Math.cos(a), Math.sin(a)] }); }
+    const p0 = core[c], p1 = core[(c + 1) % 3];
+    for (let s = 1; s < 16; s++) { const t = s / 16; contour.push({ p: [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t], n: nNext }); }
+  }
+  const zf = depth / 2 - r;
+  const rings = [];
+  const th = Math.PI / 2 - 0.06;
+  for (let s = 0; s <= 4; s++) rings.push({ z: -zf, th: -th + th * s / 4 });     // back fillet
+  for (let s = 0; s <= 4; s++) rings.push({ z: zf, th: th * s / 4 });            // front fillet
+  const pos = [], nor = [], idx = [];
+  for (const rg of rings) for (const c of contour) {
+    const ct = Math.cos(rg.th), st = Math.sin(rg.th);
+    const n = [c.n[0] * ct, c.n[1] * ct, st];
+    pos.push(c.p[0] + r * n[0], c.p[1] + r * n[1], rg.z + r * n[2]); nor.push(...n);
+  }
+  const M = contour.length;
+  for (let j = 0; j < rings.length - 1; j++) for (let i = 0; i < M; i++) {
+    const a = j * M + i, b = j * M + (i + 1) % M, c = (j + 1) * M + i, d = (j + 1) * M + (i + 1) % M;
+    idx.push(a, b, d, a, d, c);
+  }
+  for (const [ring, nz] of [[0, -1], [rings.length - 1, 1]]) {
+    const center = pos.length / 3;
+    pos.push(0, 0, nz * depth / 2); nor.push(0, 0, nz);
+    for (let i = 0; i < M; i++) idx.push(center, ring * M + i, ring * M + (i + 1) % M);
+  }
+  // wind every triangle outward
+  for (let t = 0; t < idx.length; t += 3) {
+    const [a, b, c] = [idx[t], idx[t + 1], idx[t + 2]];
+    const A = pos.slice(a * 3, a * 3 + 3), B = pos.slice(b * 3, b * 3 + 3), C = pos.slice(c * 3, c * 3 + 3);
+    const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], v = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+    const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const n = [nor[a * 3] + nor[b * 3] + nor[c * 3], nor[a * 3 + 1] + nor[b * 3 + 1] + nor[c * 3 + 1], nor[a * 3 + 2] + nor[b * 3 + 2] + nor[c * 3 + 2]];
+    if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0) { idx[t + 1] = c; idx[t + 2] = b; }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+  const planes = enorm.map((n) => new THREE.Vector4(n[0], n[1], 0, inrad));
+  planes.push(new THREE.Vector4(0, 0, 1, depth / 2), new THREE.Vector4(0, 0, -1, depth / 2));
+  return { g, planes };
+}
+
+const GLSL_COMMON = /* glsl */`
+uniform vec4 uPlanes[5];
+uniform float uIor, uF0, uRefl;
+vec3 srgbToLinear(vec3 c){ return mix(c/12.92, pow((c+.055)/1.055, vec3(2.4)), step(.04045, c)); }
+vec3 linearToSrgb(vec3 c){ c=max(c,0.); return mix(c*12.92, 1.055*pow(c, vec3(1./2.4))-.055, step(.0031308, c)); }
+vec3 panel(vec3 d, vec3 dir, vec2 size, float feather, vec3 col){
+  vec3 f = normalize(dir);
+  vec3 up = abs(f.y) > .99 ? vec3(1.,0.,0.) : vec3(0.,1.,0.);
+  vec3 r = normalize(cross(up, f)); vec3 u = cross(f, r);
+  float c = dot(d, f); if (c <= 0.) return vec3(0.);
+  vec2 p = vec2(dot(d, r), dot(d, u)) / c;
+  vec2 q = abs(p) - size * .5;
+  float m = (1. - smoothstep(-feather, feather, q.x)) * (1. - smoothstep(-feather, feather, q.y));
+  return col * m;
+}
+vec3 studio(vec3 d){
+  vec3 c = vec3(.012);
+  c *= mix(1., .45, smoothstep(0., 1., -d.z));          // darker back wall
+  c += vec3(.010) * smoothstep(0., .7, -d.y);           // slightly lighter floor
+  c += panel(d, vec3(-.82,.08,.57), vec2(1.35,1.1), .22, vec3(.82,.84,.88)) * .011;
+  c += panel(d, vec3(0.,-.707,.707), vec2(.38,.62), .18, vec3(1.,.97,.91)) * .22;
+  c += panel(d, vec3(.612,.354,.707), vec2(.5,.16), .035, vec3(.76,.88,1.)) * 20.;
+  c = c / (1. + c);
+  c = pow(c, vec3(1./2.2));
+  return srgbToLinear(c) * 2.3;
+}
+float exitPlane(vec3 p, vec3 d, int skip, out int hit){
+  float best = 1e9; hit = -1;
+  for (int i = 0; i < 5; i++) {
+    if (i == skip) continue;
+    float dn = dot(d, uPlanes[i].xyz);
+    if (dn <= 1e-4) continue;
+    float t = (uPlanes[i].w - dot(p, uPlanes[i].xyz)) / dn;
+    if (t > 1e-3 && t < best) { best = t; hit = i; }
+  }
+  return best;
+}
+int nearestPlane(vec3 p){
+  int k = 0; float b = 1e9;
+  for (int i = 0; i < 5; i++) { float e = abs(dot(p, uPlanes[i].xyz) - uPlanes[i].w); if (e < b) { b = e; k = i; } }
+  return k;
+}
+float schlick(float c){ return uF0 + (1. - uF0) * pow(1. - clamp(c, 0., 1.), 5.); }
+`;
+const VERT = /* glsl */`
+varying vec3 vWorld; varying vec3 vN;
+void main(){ vec4 w = modelMatrix * vec4(position, 1.); vWorld = w.xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * w; }`;
+const BACK_FRAG = GLSL_COMMON + /* glsl */`
+varying vec3 vWorld; varying vec3 vN;
+void main(){
+  vec3 v = normalize(vWorld - cameraPosition);
+  vec3 p = vWorld; vec3 N = normalize(vN);
+  int face = nearestPlane(p);
+  vec3 d = v; float weight = 1.; vec3 env = vec3(0.); bool escaped = false;
+  // glass -> air at the inner face
+  vec3 t = refract(d, -N, uIor);
+  float F = schlick(abs(dot(d, N)));
+  if (dot(t, t) > 0.) {
+    // light escapes here; follow the inner reflection out of the glass instead
+    weight = F;
+    d = reflect(d, N);
+    for (int b = 0; b < 3; b++) {
+      int h; float s = exitPlane(p, d, face, h); if (h < 0) break;
+      p += d * s; face = h; vec3 n2 = uPlanes[h].xyz;
+      vec3 t2 = refract(d, -n2, uIor);
+      if (dot(t2, t2) > 0.) { env = studio(normalize(t2)) * (1. - schlick(dot(d, n2))); escaped = true; break; }
+      d = reflect(d, n2);
+    }
+  } else {
+    d = reflect(d, N);
+    for (int b = 0; b < 3; b++) {
+      int h; float s = exitPlane(p, d, face, h); if (h < 0) break;
+      p += d * s; face = h; vec3 n2 = uPlanes[h].xyz;
+      vec3 t2 = refract(d, -n2, uIor);
+      if (dot(t2, t2) > 0.) { env = studio(normalize(t2)) * (1. - schlick(dot(d, n2))); escaped = true; break; }
+      d = reflect(d, n2);
+    }
+  }
+  gl_FragColor = vec4(env * uRefl * weight, weight);
+}`;
+const FRONT_FRAG = GLSL_COMMON + /* glsl */`
+varying vec3 vWorld; varying vec3 vN;
+uniform sampler2D uScene; uniform mat4 uViewProj; uniform vec3 uAbsorb;
+void main(){
+  vec3 v = normalize(vWorld - cameraPosition);
+  vec3 N = normalize(vN);
+  float facing = clamp(dot(-v, N), 0., 1.);
+  float F = schlick(facing);
+  vec3 refl = studio(reflect(v, N));
+  vec3 t = refract(v, N, 1. / uIor);
+  int h; float s = exitPlane(vWorld, t, -1, h);
+  vec3 P = vWorld + t * min(s, 1e5);
+  vec4 clip = uViewProj * vec4(P, 1.);
+  vec2 uv = clamp(clip.xy / clip.w * .5 + .5, 0., 1.);
+  vec3 trans = texture2D(uScene, uv).rgb * exp(-uAbsorb * min(s, 1e5));
+  float lum = dot(refl, vec3(.2126, .7152, .0722));
+  float hl = smoothstep(.5, .82, lum) * clamp(uRefl * .4, 0., .7) * (.65 + .35 * pow(1. - facing, 1.5));
+  vec3 c = trans * (1. - F) + refl * F * uRefl + vec3(hl);
+  c = mix(c, .8 + .2 * (1. - exp(-(c - .8) / .2)), step(.8, c));   // soft shoulder
+  gl_FragColor = vec4(linearToSrgb(c), 1.);
+}`;
+const QUAD_VERT = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`;
+const BG_FRAG = /* glsl */`
+varying vec2 vUv; uniform sampler2D uLight;
+vec3 srgbToLinear(vec3 c){ return mix(c/12.92, pow((c+.055)/1.055, vec3(2.4)), step(.04045, c)); }
+void main(){
+  vec3 bg = vec3(21., 21., 23.) / 255.;
+  vec4 l = texture2D(uLight, vUv);
+  vec3 c = 1. - (1. - bg) * (1. - l.rgb * l.a);
+  gl_FragColor = vec4(srgbToLinear(c), 1.);
+}`;
+const COPY_FRAG = /* glsl */`
+varying vec2 vUv; uniform sampler2D uTex;
+vec3 linearToSrgb(vec3 c){ c=max(c,0.); return mix(c*12.92, 1.055*pow(c, vec3(1./2.4))-.055, step(.0031308, c)); }
+void main(){ gl_FragColor = vec4(linearToSrgb(texture2D(uTex, vUv).rgb), 1.); }`;
+
+function createGL() {
+  if (!glCanvas.getContext("webgl2")) return null;
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, alpha: false }); }
+  catch (e) { return null; }
+  renderer.autoClear = false;
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.setClearColor(0x151517, 1);
+  fx.style.display = "none";
+
+  const lightTex = new THREE.CanvasTexture(fx);
+  lightTex.colorSpace = THREE.NoColorSpace;
+  lightTex.minFilter = lightTex.magFilter = THREE.LinearFilter;
+  lightTex.generateMipmaps = false;
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: true });
+
+  const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const quad = (frag, uniforms) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false }));
+    m.frustumCulled = false; const s = new THREE.Scene(); s.add(m); return s;
+  };
+  const bgScene = quad(BG_FRAG, { uLight: { value: lightTex } });
+  const copyScene = quad(COPY_FRAG, { uTex: { value: rt.texture } });
+
+  const camera = new THREE.PerspectiveCamera(48, 1, 1, 100000);
+  const ior = 1.645;
+  const common = {
+    uPlanes: { value: [] }, uIor: { value: ior }, uF0: { value: ((ior - 1) / (ior + 1)) ** 2 }, uRefl: { value: 2.14 },
+  };
+  const backMat = new THREE.ShaderMaterial({
+    vertexShader: VERT, fragmentShader: BACK_FRAG, uniforms: common, side: THREE.BackSide, transparent: true,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor, depthWrite: false,
+  });
+  const frontMat = new THREE.ShaderMaterial({
+    vertexShader: VERT, fragmentShader: FRONT_FRAG, side: THREE.FrontSide,
+    uniforms: { ...common, uScene: { value: rt.texture }, uViewProj: { value: new THREE.Matrix4() }, uAbsorb: { value: new THREE.Vector3() } },
+  });
+  const backScene = new THREE.Scene(), frontScene = new THREE.Scene();
+  let backMesh = null, frontMesh = null, builtFor = 0;
+  const orbit = [0, 0], orbitT = [0, 0];
+
+  function build() {
+    if (Math.abs(builtFor - S) < 0.5) return;
+    builtFor = S;
+    const { g, planes } = prismGeometry(S);
+    if (backMesh) { backScene.remove(backMesh); frontScene.remove(frontMesh); backMesh.geometry.dispose(); }
+    backMesh = new THREE.Mesh(g, backMat); frontMesh = new THREE.Mesh(g, frontMat);
+    backScene.add(backMesh); frontScene.add(frontMesh);
+    common.uPlanes.value = planes;
+    frontMat.uniforms.uAbsorb.value.set(1, 1, 0.54).multiplyScalar(0.57 / S);
+  }
+
+  function placeCamera() {
+    const D = (H / 2) / Math.tan((24 * Math.PI) / 180);
+    const yaw = (orbit[0] * 3.5 * Math.PI) / 180, pitch = (orbit[1] * 3.5 * Math.PI) / 180;
+    camera.position.set(D * Math.sin(yaw) * Math.cos(pitch), D * Math.sin(pitch), D * Math.cos(yaw) * Math.cos(pitch));
+    camera.aspect = W / H;
+    camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
+    camera.near = D * 0.1; camera.far = D * 10;
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+    frontMat.uniforms.uViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  }
+
+  const v3 = new THREE.Vector3();
+  toScreen = (p) => {
+    v3.set(p[0] - cx, cy - p[1], 0).project(camera);
+    return [(v3.x * 0.5 + 0.5) * W, (0.5 - v3.y * 0.5) * H];
+  };
+
+  return {
+    orbit, orbitT,
+    resize() { renderer.setPixelRatio(dpr); renderer.setSize(W, H, false); rt.setSize(Math.round(W * dpr), Math.round(H * dpr)); build(); placeCamera(); },
+    camera: placeCamera,
+    render() {
+      lightTex.needsUpdate = true;
+      renderer.setRenderTarget(rt); renderer.clear();
+      renderer.render(bgScene, ortho);
+      renderer.render(backScene, camera);
+      renderer.setRenderTarget(null); renderer.clear();
+      renderer.render(copyScene, ortho);
+      renderer.render(frontScene, camera);
+    },
+  };
+}
+gl = createGL();
+
+// ---------------------------------------------------------------- interaction
+let lastMove = -1e9, hasPointer = false;
+function onPointer(x, y) {
+  const r = stage.getBoundingClientRect();
+  const nx = Math.min(1, Math.max(0, (x - r.left) / r.width)), ny = Math.min(1, Math.max(0, (y - r.top) / r.height));
+  aimT[0] = ny; aimT[1] = nx;
+  if (gl) { gl.orbitT[0] = nx * 2 - 1; gl.orbitT[1] = ny * 2 - 1; }
+  lastMove = performance.now(); hasPointer = true;
+}
+addEventListener("pointermove", (e) => { if (e.isPrimary) onPointer(e.clientX, e.clientY); }, { passive: true });
+addEventListener("pointerdown", (e) => onPointer(e.clientX, e.clientY), { passive: true });
+addEventListener("touchmove", (e) => { const t = e.touches[0]; if (t) onPointer(t.clientX, t.clientY); }, { passive: true });
+document.addEventListener("pointerleave", () => { if (gl) { gl.orbitT[0] = 0; gl.orbitT[1] = 0; } });
+document.documentElement.addEventListener("mouseleave", () => { if (gl) { gl.orbitT[0] = 0; gl.orbitT[1] = 0; } });
+
+let t0 = performance.now(), last = t0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const time = (now - t0) / 1000;
+  const idle = mobile || (now - lastMove > 6000);
+  if (idle && !reduceMotion) {
+    const a = (time / 18) * Math.PI * 2;
+    aimT[0] = 0.5 + 0.34 * Math.sin(a); aimT[1] = 0.5 + 0.34 * Math.cos(a);
+    if (gl && mobile) { gl.orbitT[0] = 0; gl.orbitT[1] = 0; }
+  }
+  const kl = 1 - Math.pow(1 - 0.12, dt * 60), kc = 1 - Math.pow(1 - 0.08, dt * 60);
+  aim[0] += (aimT[0] - aim[0]) * kl; aim[1] += (aimT[1] - aim[1]) * kl;
+  if (gl) {
+    gl.orbit[0] += (gl.orbitT[0] - gl.orbit[0]) * kc; gl.orbit[1] += (gl.orbitT[1] - gl.orbit[1]) * kc;
+    gl.camera();
+  }
+  drawLight(time, dt);
+  if (gl) gl.render();
+  requestAnimationFrame(frame);
+}
+
+let rz;
+addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(layout, 60); });
+layout();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
