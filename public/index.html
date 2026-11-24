@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>agentpay — x402 payments, approved by you</title>
+<title>x402 AgentPay via MCP</title>
 <meta name="description" content="agentpay lets Claude pay for x402 APIs from your own wallet. Every payment is checked first and signed by you in Phantom.">
 <meta name="theme-color" content="#151517">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,7 +47,9 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
 
 .copy{position:relative;z-index:1;min-height:calc(100svh - 64px);display:flex;flex-direction:column;justify-content:center;padding:0 var(--gutter) 64px;max-width:560px;pointer-events:none}
 .copy>*{pointer-events:auto}
-.wordmark{font-family:var(--display);font-weight:500;font-size:clamp(72px,8.6vw,124px);line-height:.9;letter-spacing:-.035em;margin-bottom:clamp(14px,1.8vw,22px)}
+.wordmark{font-family:var(--display);font-weight:500;font-size:clamp(52px,5.6vw,88px);line-height:.98;letter-spacing:-.035em}
+.wordmark span{display:block}
+.wordmark .via{font-weight:300;color:var(--muted);letter-spacing:-.025em}
 .lede{font-size:clamp(28px,3.05vw,44px);line-height:1.2;font-weight:300;letter-spacing:-.025em;margin-bottom:clamp(24px,2.6vw,36px)}
 .lede span{display:block}
 .tabs{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:14px}
@@ -66,6 +68,49 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
 .copy-btn.done .ok{display:block}
 .copy-btn.done .cp{display:none}
 
+/* below the hero */
+html{scroll-behavior:smooth}
+.more{position:relative;padding:0 var(--gutter)}
+.block{max-width:1120px;margin:0 auto;padding:clamp(72px,10vw,128px) 0 0}
+.kicker{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:14px}
+.h2{font-family:var(--display);font-size:clamp(28px,3.2vw,44px);font-weight:400;letter-spacing:-.025em;line-height:1.15;max-width:760px;margin-bottom:clamp(28px,3.5vw,44px)}
+.steps{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.card,.feat{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01));padding:22px}
+.card h3,.feat h3{font-size:18px;font-weight:500;letter-spacing:-.01em;margin:14px 0 8px}
+.feat h3{margin-top:0}
+.card p,.feat p{font-size:15px;line-height:1.6;color:var(--muted)}
+.card b{color:var(--ink);font-weight:500}
+.num{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;color:var(--ink);background:rgba(255,255,255,.06);border-radius:5px;padding:1px 5px;overflow-wrap:anywhere}
+.steps .card:first-child{grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:8px 40px;align-items:start}
+.steps .card:first-child .num,.steps .card:first-child h3,.steps .card:first-child p{grid-column:1}
+.steps .card:first-child h3{margin-top:6px}
+.install{grid-column:2;grid-row:1 / span 3;align-self:center}
+.install .cmd{max-width:none}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 40px;border-top:1px solid var(--line)}
+.tools div{display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid var(--line)}
+.tools dt{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;color:var(--ink)}
+.tools dd{font-size:15px;color:var(--muted)}
+.note{text-align:center;padding-bottom:0}
+.note .h2{margin:0 auto 12px}
+.note p{color:var(--muted);font-size:16px}
+.foot{max-width:1120px;margin:clamp(72px,10vw,128px) auto 0;padding:24px 0 40px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;font-size:14px;color:var(--dim)}
+.foot nav{display:flex;gap:20px}
+.foot a{color:var(--muted)} .foot a:hover{color:var(--ink)}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+@media (max-width:960px){
+  .steps{grid-template-columns:minmax(0,1fr)}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .steps,.grid,.tools{grid-template-columns:minmax(0,1fr)}
+  .steps .card:first-child{display:block}
+  .install{margin-top:18px}
+  .foot{flex-direction:column}
+}
+
 .rise{opacity:0;transform:translateY(12px);animation:rise .9s cubic-bezier(.2,.7,.2,1) forwards}
 .copy>.rise:nth-child(2){animation-delay:.08s}
 .copy>.rise:nth-child(3){animation-delay:.16s}
@@ -83,20 +128,21 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
 }
 @media (max-width:420px){.tabs{font-size:14px;gap:6px}.cmd{font-size:14px}}
 @media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .reveal{opacity:1;transform:none;transition:none}
   .rise,.stage{animation:none;opacity:1;transform:none}
   .cmd-text{transition:none}
 }
 </style>
 </head>
 <body>
-<section class="hero" aria-label="agentpay">
+<section class="hero" aria-label="x402 AgentPay via MCP">
   <div class="stage" aria-hidden="true"><canvas id="gl"></canvas><canvas id="fx"></canvas></div>
   <header class="nav">
     <div class="brand">
-      <a href="/" aria-label="agentpay home"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22 20H2z" fill="#fff"/></svg></a>
-      <span class="brand-slash">/</span>
-      <a class="brand-name" href="/">agentpay</a>
+      <a class="brand-name" href="/">AgentPay</a>
       <nav class="links" aria-label="Main">
+        <a href="#how">How to Pay</a>
         <a href="https://github.com/kato9292929/x402-wallet-mcp#readme">Docs</a>
         <a href="https://probe.x402jp.com">Seller Probe</a>
       </nav>
@@ -113,26 +159,116 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
     </div>
   </header>
   <div class="copy">
-    <h1 class="wordmark rise">agentpay</h1>
-    <p class="lede rise"><span>Paid APIs for Claude,</span><span>approved from your wallet.</span></p>
-    <div class="tabs rise" role="tablist" aria-label="Connect method">
-      <button class="tab" role="tab" aria-selected="true" data-cmd="https://agentpay.x402jp.com/mcp">Claude</button>
-      <span class="dot">·</span>
-      <button class="tab" role="tab" aria-selected="false" data-cmd="claude mcp add --transport http agentpay https://agentpay.x402jp.com/mcp">Claude Code</button>
-      <span class="dot">·</span>
-      <button class="tab" role="tab" aria-selected="false" data-cmd="Buy https://jin.x402jp.com/api/jin/series">Prompt</button>
-      <span class="dot">·</span>
-      <button class="tab" role="tab" aria-selected="false" data-cmd="request_x402_payment → approve link → get_x402_result">Tools</button>
-    </div>
-    <div class="cmd rise">
-      <span class="cmd-text" id="cmd">https://agentpay.x402jp.com/mcp</span>
-      <button class="copy-btn" id="copy" aria-label="Copy command">
-        <svg class="cp" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>
-        <svg class="ok" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
-      </button>
-    </div>
+    <h1 class="wordmark rise"><span>x402 AgentPay</span><span class="via">via MCP</span></h1>
   </div>
 </section>
+
+<main class="more">
+  <section class="block" id="how" aria-labelledby="how-title">
+    <p class="kicker reveal">How to Pay</p>
+    <h2 class="h2 reveal" id="how-title">Four steps. You approve every payment.</h2>
+    <ol class="steps">
+      <li class="card reveal">
+        <span class="num">01</span>
+        <h3>Connect it to Claude</h3>
+        <p>In Claude, open <b>Plugins</b>, choose <b>Add</b> → <b>Add custom connector</b>, paste the URL below and choose <b>No sign in</b>. In Claude Code, run the command instead.</p>
+        <div class="install">
+    <div class="tabs" role="tablist" aria-label="Connect method">
+            <button class="tab" role="tab" aria-selected="true" data-cmd="https://agentpay.x402jp.com/mcp">Claude</button>
+            <span class="dot">·</span>
+            <button class="tab" role="tab" aria-selected="false" data-cmd="claude mcp add --transport http agentpay https://agentpay.x402jp.com/mcp">Claude Code</button>
+            <span class="dot">·</span>
+            <button class="tab" role="tab" aria-selected="false" data-cmd="Buy https://jin.x402jp.com/api/jin/series">Prompt</button>
+            <span class="dot">·</span>
+            <button class="tab" role="tab" aria-selected="false" data-cmd="request_x402_payment → approve link → get_x402_result">Tools</button>
+          </div>
+          <div class="cmd">
+            <span class="cmd-text" id="cmd">https://agentpay.x402jp.com/mcp</span>
+            <button class="copy-btn" id="copy" aria-label="Copy command">
+              <svg class="cp" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>
+              <svg class="ok" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+            </button>
+          </div>
+      </li>
+      <li class="card reveal">
+        <span class="num">02</span>
+        <h3>Ask Claude to buy</h3>
+        <p>Paste the paid API’s URL and say “buy this”. AgentPay runs every check first. If one fails, nothing is prepared.</p>
+      </li>
+      <li class="card reveal">
+        <span class="num">03</span>
+        <h3>Open the link and sign</h3>
+        <p>Claude shows an approval link with the price, the payee and the API. Press sign and approve in Phantom (Solana) or Rabby / MetaMask (Base). On a phone, open it in the Phantom app.</p>
+      </li>
+      <li class="card reveal">
+        <span class="num">04</span>
+        <h3>Tell Claude “approved”</h3>
+        <p>Claude fetches the result: the API response, the transaction found on chain and the delivery check. A link that isn’t approved expires in 5 minutes.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="block" aria-labelledby="checks-title">
+    <p class="kicker reveal">Before and after every payment</p>
+    <h2 class="h2 reveal" id="checks-title">Checks you would forget to run yourself.</h2>
+    <div class="grid">
+      <article class="feat reveal">
+        <h3>Seller record</h3>
+        <p>Looks the seller up in Seller Probe. If its latest paid purchase was paid but not delivered, the payment is stopped.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Price and input</h3>
+        <p>Compares the price the API asks with its catalog listing, and checks that the request carries the input the API requires.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Spending limits</h3>
+        <p>At most $0.10 per payment and $1.00 per wallet per 24 hours. You can lower them in your connector URL. Claude can’t change them.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Built when you sign</h3>
+        <p>The payment is checked again and built only after you press sign, so it never goes stale. The amount you sign must match the amount you saw.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Confirmed on chain</h3>
+        <p>After paying, AgentPay finds the transfer on chain itself instead of trusting the seller’s reply. The same payment is never sent twice.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Recovers non-delivery</h3>
+        <p>If a seller takes the payment but doesn’t deliver, and it publishes Delivery Receipt keys, AgentPay fetches the response again with the same payment.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="tools-title">
+    <p class="kicker reveal">Tools</p>
+    <h2 class="h2 reveal" id="tools-title">What Claude can do with it.</h2>
+    <dl class="tools reveal">
+      <div><dt>list_bazaar_resources</dt><dd>Find paid x402 APIs.</dd></div>
+      <div><dt>get_resource_details</dt><dd>Price, payment options and input for one API.</dd></div>
+      <div><dt>check_seller</dt><dd>Run the pre-payment checks without paying.</dd></div>
+      <div><dt>check_payment_requirements</dt><dd>See what an API asks for and whether it fits your limits.</dd></div>
+      <div><dt>request_x402_payment</dt><dd>Prepare a payment and return your approval link.</dd></div>
+      <div><dt>get_x402_result</dt><dd>Get the response and on-chain result after you approve.</dd></div>
+      <div><dt>get_wallet_balance</dt><dd>Read a wallet’s USDC balance.</dd></div>
+      <div><dt>get_wallet_address</dt><dd>Show the paying address.</dd></div>
+    </dl>
+  </section>
+
+  <section class="block note reveal" aria-label="Keys">
+    <h2 class="h2">Your keys stay in your wallet.</h2>
+    <p>AgentPay holds no keys. Nothing is paid unless you sign it in your own wallet.</p>
+  </section>
+
+  <footer class="foot">
+    <span>AgentPay</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/kato9292929/x402-wallet-mcp">GitHub</a>
+      <a href="https://probe.x402jp.com">Seller Probe</a>
+      <a href="https://x402.org">x402</a>
+    </nav>
+  </footer>
+</main>
+
 
 <script>
 (function () {
@@ -145,6 +281,13 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
       setTimeout(function () { cmd.textContent = tab.dataset.cmd; cmd.classList.remove("swap"); }, 160);
     });
   });
+  var items = document.querySelectorAll(".reveal");
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, { rootMargin: "0px 0px -10% 0px", threshold: 0.12 });
+    items.forEach(function (el, i) { el.style.transitionDelay = (el.parentElement.children.length > 2 ? (Array.prototype.indexOf.call(el.parentElement.children, el) % 4) * 70 : 0) + "ms"; io.observe(el); });
+  } else items.forEach(function (el) { el.classList.add("in"); });
   var btn = document.getElementById("copy");
   btn.addEventListener("click", async function () {
     try { await navigator.clipboard.writeText(cmd.textContent); } catch (e) {}
