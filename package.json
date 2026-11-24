@@ -52,13 +52,13 @@
     "@crossmint/wallets-sdk": "^1.21.2",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@privy-io/node": "^0.38.0",
-    "@solana/kit": "^5.5.1",
+    "@solana/kit": "8.5.0",
     "@solana/web3.js": "^1.98.1",
-    "@x402/core": "2.28.0",
-    "@x402/evm": "2.28.0",
-    "@x402/extensions": "2.28.0",
-    "@x402/fetch": "2.28.0",
-    "@x402/svm": "2.28.0",
+    "@x402/core": "2.31.0",
+    "@x402/evm": "2.31.0",
+    "@x402/extensions": "2.31.0",
+    "@x402/fetch": "2.31.0",
+    "@x402/svm": "2.31.0",
     "bs58": "^6.0.0",
     "viem": "^2.57.16",
     "zod": "^4.6.7"
@@ -81,5 +81,10 @@
   "bugs": {
     "url": "https://github.com/kato9292929/x402-wallet-mcp/issues"
   },
-  "author": "x402 Inc."
+  "author": "x402 Inc.",
+  "overrides": {
+    "@privy-io/node": {
+      "@solana/kit": "$@solana/kit"
+    }
+  }
 }

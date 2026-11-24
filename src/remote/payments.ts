@@ -287,7 +287,7 @@ async function buildUnsigned(prep: Prepared, payer: string) {
             messageBytes = new Uint8Array(tx.messageBytes);
             return { [payer]: new Uint8Array(64) };
           }),
-      } as any),
+      } as any, { transactionVersions: [0] }),
     );
   } else {
     client.register(
@@ -455,9 +455,17 @@ export async function solanaPaymentProblem(message: Uint8Array, want: SolanaPaym
     const program = keys[ix.programAddressIndex];
     const accounts: string[] = (ix.accountIndices ?? []).map((i: number) => keys[i]);
     const data = Buffer.from(ix.data ?? []);
-    // §2.1.1 for every instruction, Lighthouse included: PayAI refuses a Lighthouse instruction that
-    // reads the fee payer (fee_payer_transferring_funds), so sending it would only fail there.
-    if (program === want.feePayer || accounts.includes(want.feePayer)) return "the facilitator appears in an instruction";
+    if (program === want.feePayer) return "the facilitator is called as a program";
+    if (program === LIGHTHOUSE_PROGRAM) {
+      // Only Lighthouse assertions (first byte 2..17) may be added; MemoryWrite (0), MemoryClose (1),
+      // empty and unknown variants can change state and are refused (x402 exact SVM spec, guard
+      // instructions). Phantom's assertions may read the fee payer (to check it keeps its SOL). They
+      // cannot move funds, so they are let through: whether the facilitator accepts them is its policy
+      // (spec-strict facilitators such as PayAI refuse them; Covenant and x402-doctor accept them).
+      if (data.length === 0 || data[0] < 2 || data[0] > 17) return "it has a Lighthouse instruction that is not an assertion";
+      continue;
+    }
+    if (accounts.includes(want.feePayer)) return "the facilitator appears in an instruction";
     if (program === COMPUTE_BUDGET_PROGRAM) {
       if (data[0] !== 2 && data[0] !== 3) return "it has a compute-budget instruction other than limit/price";
       continue;
@@ -466,7 +474,6 @@ export async function solanaPaymentProblem(message: Uint8Array, want: SolanaPaym
       memos.push(data.toString("utf8"));
       continue;
     }
-    if (program === LIGHTHOUSE_PROGRAM) continue;
     if (program === TOKEN_PROGRAM || program === TOKEN_2022_PROGRAM) {
       if (data[0] !== 12 || data.length !== 10 || accounts.length < 4) return "it has a token instruction other than the payment";
       const [, mint, dest, authority] = accounts;
