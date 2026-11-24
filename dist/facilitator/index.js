@@ -16,10 +16,13 @@ import { CHAINS, SOLANA } from "../chains.js";
  * simulation of the whole transaction, settlement) is the official code, unchanged.
  *
  * Policy, to keep the fee payer's SOL for our own sellers: only payTo addresses listed in
- * FACILITATOR_PAY_TO, only mainnet USDC, and at most FACILITATOR_DAILY_MAX successful settlements a day.
+ * FACILITATOR_PAY_TO, only mainnet USDC, and at most FACILITATOR_DAILY_MAX settlements a day that may have
+ * cost the fee payer SOL (settles refused before sending are not counted).
  */
 export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
 const DEFAULT_DAILY_MAX = 200;
+/** @x402/svm 2.31.0's reason when sending failed (the transaction may have reached the network). */
+const SEND_FAILED = "invalid_exact_svm_transaction_failed";
 export class FacilitatorConfigError extends Error {
 }
 /** Drops only Phantom's Lighthouse assertions that read the fee payer; everything else goes to the official checks. */
@@ -88,7 +91,9 @@ export async function settle(setup, payload, req, store) {
     const problem = policyProblem(setup, req);
     if (problem)
         return { success: false, errorReason: problem, transaction: "", network: req.network, payer: "" };
-    // Reserve a slot first (concurrent settles cannot pass the limit together), give it back unless it settled.
+    // Reserve a slot first (concurrent settles cannot pass the limit together). The limit counts every
+    // settle that may have cost the fee payer SOL: the slot is given back only when @x402/svm stopped
+    // before sending (verification failed: no transaction, and not a send failure).
     const n = await store.incr(dayKey(), 1, 2 * 24 * 3600);
     if (n > setup.dailyMax) {
         await store.incr(dayKey(), -1, 2 * 24 * 3600);
@@ -99,10 +104,9 @@ export async function settle(setup, payload, req, store) {
         result = await setup.facilitator.settle(payload, req);
     }
     catch (err) {
-        await store.incr(dayKey(), -1, 2 * 24 * 3600);
-        throw err;
+        throw err; // outcome unknown: stays counted
     }
-    if (!result.success)
+    if (!result.success && !result.transaction && result.errorReason !== SEND_FAILED)
         await store.incr(dayKey(), -1, 2 * 24 * 3600);
     return result;
 }

@@ -125,13 +125,26 @@ describe("facilitator: policy", () => {
 });
 
 describe("facilitator: daily limit", () => {
-  it("counts only successful settlements", async () => {
+  const run = async (results: Record<string, unknown>[], dailyMax: number) => {
     const store = memoryStore();
-    let ok = false;
-    const setup = { payTo: new Set([payTo.toBase58()]), dailyMax: 1, facilitator: { settle: async () => ({ success: ok }) } } as any;
-    expect(await settle(setup, {} as any, requirements, store)).toMatchObject({ success: false });
-    ok = true;
-    expect(await settle(setup, {} as any, requirements, store)).toMatchObject({ success: true });
-    expect(await settle(setup, {} as any, requirements, store)).toMatchObject({ success: false, errorReason: "daily_limit_reached" });
+    const queue = [...results];
+    const setup = { payTo: new Set([payTo.toBase58()]), dailyMax, facilitator: { settle: async () => queue.shift() } } as any;
+    const out = [];
+    for (let i = 0; i < results.length; i++) out.push(await settle(setup, {} as any, requirements, store));
+    out.push(await settle(setup, {} as any, requirements, store));
+    return out;
+  };
+
+  it("does not count settles refused before sending", async () => {
+    const out = await run([{ success: false, transaction: "", errorReason: "invalid_exact_svm_payload_amount_mismatch" }, { success: true, transaction: "sig" }], 1);
+    expect(out[1]).toMatchObject({ success: true });
+    expect(out[2]).toMatchObject({ errorReason: "daily_limit_reached" });
+  });
+
+  it("counts settles that may have cost SOL: sent and failed, or send failed", async () => {
+    expect((await run([{ success: false, transaction: "sig", errorReason: "x" }], 1))[1]).toMatchObject({ errorReason: "daily_limit_reached" });
+    expect((await run([{ success: false, transaction: "", errorReason: "invalid_exact_svm_transaction_failed" }], 1))[1]).toMatchObject({
+      errorReason: "daily_limit_reached",
+    });
   });
 });
