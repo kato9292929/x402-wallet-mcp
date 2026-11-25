@@ -453,6 +453,24 @@ export async function solanaPaymentProblem(message, want) {
         return "the seller's memo is missing";
     return null;
 }
+/**
+ * Some wallets return the recovery id v as 0/1; the USDC contract (ecrecover) and facilitators expect
+ * 27/28. Other values are left as they are.
+ */
+export function normalizeEvmSignature(signature) {
+    const v = parseInt(signature.slice(-2), 16);
+    return v === 0 || v === 1 ? signature.slice(0, -2) + (v + 27).toString(16) : signature;
+}
+/** What was signed and sent on Base: the typed data given to the wallet, the signature's v and the authorization sent to the seller. */
+export function evmPaymentRecord(typedDataJson, payment) {
+    const p = payment.payload?.payload ?? {};
+    const sig = typeof p.signature === "string" ? p.signature : "";
+    return {
+        typed_data: fromJson(typedDataJson),
+        signature_v: sig.length === 132 ? parseInt(sig.slice(-2), 16) : null,
+        authorization: p.authorization ?? null,
+    };
+}
 async function attachSignature(b, payer, signature, signedTx, want) {
     const payload = fromJson(b.payload);
     if (b.family === "solana") {
@@ -495,6 +513,7 @@ async function attachSignature(b, payer, signature, signedTx, want) {
     else {
         if (!/^0x[0-9a-fA-F]{130}$/.test(signature))
             throw new FlowError("ウォレットの署名を読めませんでした。支払いはしていません。");
+        signature = normalizeEvmSignature(signature);
         const td = fromJson(b.typedData);
         const recovered = await recoverTypedDataAddress({ ...td, signature: signature });
         if (getAddress(recovered) !== getAddress(payer)) {
@@ -537,6 +556,10 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
             ...(err instanceof PaymentError ? err.details : {}),
         };
     }
+    if (b.family === "evm" && b.typedData) {
+        result.evm_payment = JSON.parse(JSON.stringify(evmPaymentRecord(b.typedData, payment), (_k, x) => (typeof x === "bigint" ? x.toString() : x)));
+        console.log(`[agentpay402] evm payment ${JSON.stringify({ id, status: result.status, refusal_reason: result.refusal_reason, ...result.evm_payment })}`);
+    }
     const iso = (t) => (t ? new Date(t).toISOString() : null);
     // When each step happened, to tell where a slow payment spent its time.
     result.timing = { built_at: iso(b.builtAt), signed_at: iso(signedAt), sent_at: iso(sentAt), result_at: iso(Date.now()) };
@@ -558,6 +581,8 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
         signed_transaction_shape: result.signed_transaction_shape,
         wallet_changes: result.wallet_changes,
         blockhash: result.blockhash,
+        evm_payment: result.evm_payment,
+        refusal_reason: result.refusal_reason,
         timing: result.timing,
     };
 }

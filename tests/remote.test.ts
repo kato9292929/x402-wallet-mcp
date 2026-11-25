@@ -12,6 +12,7 @@ import {
   solanaBlockhashes,
   LIGHTHOUSE_PROGRAM,
   rejectPayment,
+  normalizeEvmSignature,
   requestPayment,
   signAndPay,
   type FlowDeps,
@@ -217,19 +218,45 @@ describe("remote: approval flow (Base)", () => {
     expect(await requestPayment(params, { url: URL_ }, ORIGIN, deps)).toMatchObject({ status: "blocked", blocked_reason: "too_many_pending" });
   });
 
-  it("remembers a seller's refusal and avoids that network", async () => {
-    const { deps, params } = setup({
-      seller: () => res402([exactReq("5000", BASE_SEPOLIA)]),
-      chain: { settlement: "not_found", tx: null, transferred: null, headerTxMatched: null },
-    });
+  it("avoids a network only when the seller says it does not accept it", async () => {
+    const refuseWith = async (error: string) => {
+      const { deps, params } = setup({ seller: () => res402([exactReq("5000", BASE_SEPOLIA)], { error }) });
+      const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+      const t = tokenOf(r.approve_url);
+      const built = await buildPayment(r.request_id, t, deps);
+      expect(await signAndPay(r.request_id, t, await signTyped(owner, built.typedData as string), deps)).toMatchObject({
+        status: "rejected_by_seller",
+        paid: false,
+        refusal_reason: error,
+      });
+      return (await requestPayment(params, { url: URL_ }, ORIGIN, deps)).status;
+    };
+    expect(await refuseWith("invalid_exact_evm_network_mismatch")).toBe("blocked");
+    expect(await refuseWith("invalid_exact_evm_payload_signature: contract call failed: execution reverted")).toBe("awaiting_approval");
+  });
+
+  it("fixes a v of 0/1 to 27/28, and records the typed data, v and the authorization sent", async () => {
+    const { deps, params, sellerCalls } = setup();
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     const t = tokenOf(r.approve_url);
     const built = await buildPayment(r.request_id, t, deps);
-    expect(await signAndPay(r.request_id, t, await signTyped(owner, built.typedData as string), deps)).toMatchObject({
-      status: "rejected_by_seller",
-      paid: false,
-    });
-    expect(await requestPayment(params, { url: URL_ }, ORIGIN, deps)).toMatchObject({ status: "blocked", blocked_reason: "network_avoided" });
+    const good = await signTyped(owner, built.typedData as string);
+    const v = parseInt(good.slice(-2), 16);
+    const low = good.slice(0, -2) + (v - 27).toString(16).padStart(2, "0"); // the same signature with v = 0/1
+    expect(normalizeEvmSignature(low)).toBe(good);
+    expect(normalizeEvmSignature(good)).toBe(good);
+
+    const out: any = await signAndPay(r.request_id, t, low, deps);
+    expect(out).toMatchObject({ status: "fulfilled", paid: true });
+    const sent = JSON.parse(Buffer.from(new Headers(sellerCalls.at(-1)!.headers).get("payment-signature")!, "base64").toString());
+    expect(sent.payload.signature).toBe(good);
+    expect(out.evm_payment.signature_v).toBe(v);
+    // Every field the wallet signed is the field sent to the seller.
+    const msg = out.evm_payment.typed_data.message;
+    const auth = out.evm_payment.authorization;
+    for (const k of ["from", "to", "value", "validAfter", "validBefore", "nonce"]) expect(String(auth[k]).toLowerCase()).toBe(String(msg[k]).toLowerCase());
+    expect(out.evm_payment.typed_data.domain).toMatchObject({ chainId: 84532 });
+    expect(auth).toEqual(sent.payload.authorization);
   });
 
   it("uses mainnet Base when the URL says mainnet", () => {

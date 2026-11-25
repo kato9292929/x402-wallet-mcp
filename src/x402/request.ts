@@ -147,6 +147,35 @@ function bodyFrom(bytes: Uint8Array, contentType: string): BodyOut {
   };
 }
 
+/** The seller's stated reason for refusing a payment: the PAYMENT-REQUIRED error, or the JSON body's error / invalidReason / reason. */
+export function refusalReason(getHeader: (name: string) => string | null | undefined, bodyText: string): string {
+  const fromPr = parsePaymentRequired(getHeader, bodyText)?.error;
+  if (typeof fromPr === "string" && fromPr) return fromPr.slice(0, 300);
+  try {
+    const j = JSON.parse(bodyText);
+    for (const k of ["error", "invalidReason", "reason", "message"]) {
+      if (typeof j?.[k] === "string" && j[k]) return j[k].slice(0, 300);
+    }
+  } catch {
+    // not JSON
+  }
+  return "";
+}
+
+/**
+ * Whether a refusal says the network itself is not accepted, e.g. "unsupported_network" or
+ * "invalid_exact_evm_network_mismatch". Only these make a network avoided for 24 hours; a bad,
+ * expired or unexplained payment (BlockhashNotFound, signature checks, no reason) does not.
+ */
+export function refusesNetwork(reason: string): boolean {
+  return /unsupported[_ -]?network|network[_ -]?mismatch|invalid[_ -]?network|network[_ -]?not[_ -]?(supported|accepted|allowed)/i.test(reason);
+}
+
+/** Whether a refusal says settlement was attempted (it may have reached the chain), so the chain is still checked. */
+export function refusedAtSettlement(reason: string): boolean {
+  return /settle|transaction[_ -]?failed|time[d]?[_ -]?out|confirm/i.test(reason);
+}
+
 async function readBody(res: Response): Promise<BodyOut> {
   return bodyFrom(new Uint8Array(await res.arrayBuffer()), res.headers.get("content-type") ?? "");
 }
@@ -589,8 +618,16 @@ export class X402Requester {
     const headerTx = headerTxOf(settle);
     const body = await readBody(res);
     const latency = Date.now() - started;
+    // A 4xx with no transaction in the settlement header: the seller refused the payment before
+    // settling it, so the result is returned at once instead of searching the chain. When the reason
+    // says settlement was attempted (it may have landed), the chain is still checked.
+    const reason = res.status === 200 ? "" : refusalReason(getHeader, body.encoding === "text" ? body.body : "");
+    const refusedOutright = res.status >= 400 && res.status < 500 && !headerTx && !refusedAtSettlement(reason);
     let chain: ChainResult;
-    if (payerKey) {
+    if (refusedOutright) {
+      chain = { settlement: "not_found", tx: null, transferred: null, headerTxMatched: null };
+      warnings.push(`The seller refused the payment (HTTP ${res.status}${reason ? `: ${reason}` : ""}) and returned no transaction, so it was not looked up on chain.`);
+    } else if (payerKey) {
       chain = this.deps.findPayment
         ? await this.deps.findPayment(payerKey, headerTx)
         : await defaultFindPayment(payerKey, headerTx, this.deps.findOptions);
@@ -640,9 +677,11 @@ export class X402Requester {
     } else if (chain.settlement === "not_found") {
       status = "rejected_by_seller";
       this.deps.guard.release(reserved);
-      const reason = `HTTP ${res.status} after payment, no transfer`;
-      if (this.deps.netFailures) await this.deps.netFailures.record(host, selected.network, reason);
-      else await recordNetFailure(host, selected.network, reason, this.deps.netFailuresFile ?? netFailuresPath());
+      if (refusesNetwork(reason)) {
+        const note = `HTTP ${res.status} after payment, no transfer: ${reason}`;
+        if (this.deps.netFailures) await this.deps.netFailures.record(host, selected.network, note);
+        else await recordNetFailure(host, selected.network, note, this.deps.netFailuresFile ?? netFailuresPath());
+      }
     } else {
       // Could not tell whether money moved: not re-sent, kept counted.
       status = "not_delivered";
@@ -672,7 +711,8 @@ export class X402Requester {
       priceUsd: formatMicros(reserved),
       http_status: res.status,
       status,
-      settlement: chain.settlement,
+      settlement: refusedOutright ? "not_checked" : chain.settlement,
+      refusal_reason: reason || undefined,
       transaction: chain.tx,
       header_tx: headerTx,
       header_tx_matched: chain.headerTxMatched,
@@ -712,7 +752,8 @@ export class X402Requester {
           encoding: finalBody.encoding,
           truncated: finalBody.truncated,
           tx: txOut,
-          settlement: chain.settlement,
+          settlement: refusedOutright ? "not_checked" : chain.settlement,
+          refusal_reason: reason || undefined,
           header_tx_matched: chain.headerTxMatched,
           body_sha256: finalBody.body_sha256,
           receipt,
