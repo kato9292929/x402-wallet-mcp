@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AgentPay402 MCP プライバシーポリシー</title>
+<meta name="theme-color" content="#151517">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300..600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#151517;--ink:#ededed;--muted:#b4b4b8;--dim:#6e6e73;--line:rgba(255,255,255,.12);--gutter:clamp(16px,2.6vw,28px);
+  --sans:"Outfit","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Yu Gothic",Meiryo,system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid #fff;outline-offset:3px;border-radius:6px}
+.nav{display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 var(--gutter)}
+.brand{font-size:20px;font-weight:500;letter-spacing:-.02em}
+.nav nav{display:flex;gap:20px;font-size:14px;color:var(--muted)}
+.nav nav a:hover,.nav nav a[aria-current]{color:var(--ink)}
+main{max-width:760px;margin:0 auto;padding:clamp(40px,7vw,80px) var(--gutter) 0}
+h1{font-size:clamp(28px,4vw,40px);font-weight:500;letter-spacing:-.01em;line-height:1.3}
+.date{color:var(--dim);font-size:14px;margin:12px 0 40px}
+h2{font-size:19px;font-weight:500;margin:44px 0 14px;padding-top:24px;border-top:1px solid var(--line)}
+p,li,td,th{font-size:15px;line-height:1.9;color:var(--muted)}
+p+p{margin-top:12px}
+ol,ul{padding-left:1.6em;margin:8px 0}
+ol ol,ul ul,ol ul,ul ol{margin:4px 0}
+li{margin:2px 0}
+li::marker{color:var(--dim)}
+.table{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:520px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink);font-weight:500;font-size:14px}
+tr:last-child td{border-bottom:none}
+.foot{max-width:760px;margin:80px auto 0;padding:24px var(--gutter) 40px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;font-size:14px;color:var(--dim)}
+.foot nav{display:flex;gap:20px}
+.foot a{color:var(--muted)} .foot a:hover{color:var(--ink)}
+@media (max-width:640px){.foot{flex-direction:column}}
+</style>
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="/">AgentPay</a>
+  <nav aria-label="Legal"><a href="/terms">利用規約</a><a href="/privacy"aria-current="page">プライバシーポリシー</a></nav>
+</header>
+<main>
+<h1>AgentPay402 MCP プライバシーポリシー</h1>
+<p class="date">制定日：2026年11月25日</p>
+<p>x402株式会社（以下「当社」）は、「AgentPay402 MCP」（以下「本サービス」）の提供にあたり取得する情報を、このプライバシーポリシー（以下「本ポリシー」）に従って取り扱います。</p>
+<h2>1. 取得する情報</h2>
+<p>当社は、本サービスの提供にあたり、次の情報を取得します。</p>
+<ol><li>
+接続URLに含まれる情報
+<ul><li>
+ウォレットのアドレス（Solana、Base）
+</li><li>
+利用者が設定した上限（1回の上限、24時間の合計上限）及びネットワークの指定
+</li></ul>
+</li><li>
+AIアシスタントから本サービスに送られる依頼の内容
+<ul><li>
+呼び出すAPIのURL、HTTPメソッド、ヘッダー及び本文
+</li></ul>
+</li><li>
+支払いに関する情報
+<ul><li>
+ネットワーク、金額、支払い先のアドレス、払ったウォレットのアドレス
+</li><li>
+利用者の署名、ブロックチェーン上の取引ID
+</li><li>
+sellerの応答のHTTPステータス及び応答本文のハッシュ値
+</li></ul>
+</li><li>
+承認リンクを開いたときの情報
+<ul><li>
+IPアドレス、ブラウザの種類、アクセス日時等、通信に伴って当社のサーバー（ホスティング事業者を含みます）に記録される情報
+</li></ul>
+</li></ol>
+<p>当社は、利用者の秘密鍵及び復元フレーズを取得しません。また、本サービスは、氏名、住所、電話番号、メールアドレス等の登録を求めません。</p>
+<p>AIアシスタント上の会話のうち、本サービスに送られるのは、AIアシスタントが本サービスのツールを呼び出すときに渡す内容に限られます。AIアシスタント上の会話の取扱いは、その提供者のプライバシーポリシーによります。</p>
+<h2>2. 利用目的</h2>
+<p>当社は、取得した情報を次の目的で利用します。</p>
+<ol><li>
+本サービスの提供（支払いの前の確認、承認リンクの発行、署名された取引の確認、sellerへの送信、結果の返却）
+</li><li>
+利用者が設定した上限の管理、及び同じ支払いが二重に行われることの防止
+</li><li>
+支払いを断ったseller及びネットワークの記録による、本サービスの安全性の向上
+</li><li>
+不正利用の防止、障害の調査及び対応
+</li><li>
+本サービスの改善、及び個人を特定できない形に加工した統計データの作成
+</li><li>
+お問い合わせへの対応
+</li></ol>
+<h2>3. 保存期間</h2>
+<p>当社は、本サービスの動作に必要な情報を、次の期間を目安に保存し、期間を過ぎたものは自動的に消去します。</p>
+<ul><li>
+承認を待っている支払いの情報：最長5分
+</li><li>
+支払いの結果：30分
+</li><li>
+24時間の合計上限を管理するための、ウォレットごとの支払額の記録：24時間
+</li><li>
+sellerが支払いを断ったネットワークの記録：24時間
+</li></ul>
+<p>上記のほか、サーバーの記録（ログ）には、支払いの試行と結果の記録（APIのURL、ネットワーク、金額、支払い先、署名又は取引ID、HTTPステータス等）が残ります。ログの保存期間は、ホスティング事業者の保存期間の設定に従います。</p>
+<h2>4. ブロックチェーン上の情報</h2>
+<p>本サービスを通じて行われた支払いは、ブロックチェーン上に記録されます。ブロックチェーン上の情報（ウォレットのアドレス、金額、取引ID等）は誰でも閲覧でき、当社を含め、誰もこれを削除又は変更することはできません。</p>
+<h2>5. 第三者への提供</h2>
+<p>当社は、次の場合を除き、取得した情報を第三者に提供しません。</p>
+<ol><li>
+利用者の指示に基づき、利用者の依頼を実行するために必要な場合
+<ul><li>
+呼び出すAPIのsellerへの、依頼の内容及び署名された支払いの送信
+</li><li>
+sellerが利用するfacilitatorによる、署名された支払いの確認及びブロックチェーンへの送信
+</li></ul>
+</li><li>
+法令に基づく場合
+</li><li>
+人の生命、身体又は財産の保護のために必要がある場合であって、利用者の同意を得ることが困難であるとき
+</li><li>
+その他、個人情報の保護に関する法律で認められる場合
+</li></ol>
+<h2>6. 本サービスが利用する外部のサービス</h2>
+<p>本サービスは、その機能を提供するために、次の外部のサービスを利用し、それぞれに必要な情報を送ります。</p>
+<div class="table"><table><thead><tr><th>外部のサービス</th><th>目的</th><th>送る情報の例</th></tr></thead><tbody>
+<tr><td>Vercel（ホスティング）</td><td>本サービスの実行</td><td>本サービスへの通信全般</td></tr>
+<tr><td>Upstash（データベース）</td><td>第3項の情報の一時的な保存</td><td>承認待ち・結果・上限管理の情報</td></tr>
+<tr><td>Coinbase CDP Bazaar</td><td>x402 APIの検索・価格の確認</td><td>検索語、APIのURL</td></tr>
+<tr><td>Solana・BaseのRPC</td><td>残高・取引の確認</td><td>ウォレットのアドレス、取引ID</td></tr>
+<tr><td>jsDelivr（配信ネットワーク）</td><td>承認ページの部品の配信</td><td>承認ページを開いたときの通信情報</td></tr>
+</tbody></table></div>
+<p>これらの事業者の一部は、日本国外（米国等）にサーバーを置いています。当社は、これらの事業者に業務を委託する場合、取得した情報が適切に取り扱われるよう、必要かつ適切な監督を行います。</p>
+<p>当社は、外国において個人データを取り扱うにあたり、その国の個人情報の保護に関する制度を把握したうえで、安全管理のために必要かつ適切な措置を講じます。利用者は、当社が外国にある事業者に個人データの取扱いを委託することについて、本ポリシーに同意したうえで本サービスを利用するものとします。提供先の国の名称、その国の個人情報の保護に関する制度及び提供先が講じている措置については、下記のお問い合わせ窓口までお問い合わせください。</p>
+<p>また、本サービスは、sellerの納品の記録を確かめるため、当社が運営する「x402 Seller Probe」（probe.x402jp.com）に、sellerのホスト名を問い合わせます。</p>
+<h2>7. 安全管理</h2>
+<p>当社は、取得した情報の漏えい、滅失又は毀損を防ぐため、通信の暗号化、アクセス権限の管理、保存期間を過ぎた情報の自動消去その他の必要かつ適切な措置を講じます。承認リンクには、支払いごとに推測が困難なトークンを付け、5分で失効させています。</p>
+<h2>8. 開示等の請求</h2>
+<p>利用者は、当社が保有する利用者の個人情報について、法令に基づき、開示、訂正、利用停止、消去等を請求することができます。請求は、下記のお問い合わせ窓口までご連絡ください。なお、第3項のとおり、多くの情報は短い期間で自動的に消去されるため、請求の時点で当社が保有していない場合があります。また、第4項のブロックチェーン上の情報は、当社が削除又は変更することはできません。</p>
+<h2>9. 本ポリシーの変更</h2>
+<p>当社は、法令の変更又は本サービスの内容の変更等に応じて、本ポリシーを変更することがあります。重要な変更を行う場合は、当社のウェブサイト等で告知します。</p>
+<h2>10. お問い合わせ</h2>
+<p>x402株式会社<br>東京都港区浜松町二丁目2番15号 浜松町ダイヤビル2F<br>代表取締役 加藤 雅人<br>E-mail：hello@x402jp.com</p>
+</main>
+<footer class="foot">
+  <span>AgentPay</span>
+  <nav aria-label="Footer"><a href="/">Home</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
+</footer>
+</body>
+</html>
