@@ -11,14 +11,20 @@ export class AddressWallet {
     constructor(p) {
         this.p = p;
     }
-    /** With no address in the URL, payments are on Solana and the wallet is chosen on the approval page. */
+    /**
+     * Base and Solana for the network mode, with or without addresses in the URL: for a chain with no
+     * address, the user connects the wallet on the approval page (Phantom for Solana, Rabby / MetaMask for Base).
+     */
     chains() {
-        const out = [];
-        if (this.p.base)
-            out.push(this.p.network === "testnet" ? BASE_SEPOLIA : BASE);
-        if (this.p.solana || !this.p.base)
-            out.push(this.p.network === "testnet" ? SOLANA_DEVNET : SOLANA);
-        return out;
+        return this.p.network === "testnet" ? [SOLANA_DEVNET, BASE_SEPOLIA] : [SOLANA, BASE];
+    }
+    /**
+     * Order of preference when a seller takes several chains at the same price: chains whose address is
+     * in the URL first, then Solana before Base.
+     */
+    preferredChains() {
+        const all = this.chains();
+        return [...all.filter((c) => this.knows(c)), ...all.filter((c) => !this.knows(c))];
     }
     /** Whether the connection URL fixes the paying address for this chain. */
     knows(chain) {

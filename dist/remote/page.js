@@ -27,6 +27,7 @@ export function approvalPage(rec, origin) {
         amount: rec.priceUsd,
         to: rec.payTo,
         chainName: chain.name,
+        walletName: family === "solana" ? "Phantom" : "Rabby / MetaMask",
         chainId,
         chainParams: chainId ? (CHAIN_PARAMS[chainId] ?? null) : null,
         testnet: chain.testnet,
@@ -65,7 +66,8 @@ const short = (a) => (a && a.length > 16 ? a.slice(0, 6) + "…" + a.slice(-6) :
 const setFull = (id, text, full) => { $(id).textContent = text; if (full) $(id).title = full; };
 $("host").textContent = new URL(d.url).host;
 $("amount").textContent = d.amount + " USDC";
-$("chain").textContent = d.chainName + " で支払い";
+$("chain").textContent = d.chainName + " で支払い（" + d.walletName + " で署名）";
+$("approve").textContent = d.walletName + " で署名する";
 setFull("to", short(d.to), d.to);
 setFull("from", d.address ? short(d.address) : "承認するときに選ぶ財布", d.address);
 setFull("url", new URL(d.url).pathname, d.url);
@@ -134,7 +136,7 @@ $("approve").onclick = async () => {
     msg("支払っています…");
     const r = await post("sign", signed);
     if (r.status === "fulfilled" || r.status === "recovered_by_retry") finish("支払いました。Claude に戻って「承認した」と伝えてください。");
-    else finish("結果：" + r.status + (r.seller_error ? "（" + r.seller_error + "）" : "") + (r.signed_transaction_shape ? "｜" + r.signed_transaction_shape : "") + "。Claude に戻って「承認した」と伝えてください。", r.paid === false ? "" : "err");
+    else finish("結果：" + r.status + (r.seller_error ? "（" + r.seller_error + "）" : "") + (r.wallet_changes ? "｜" + r.wallet_changes : "") + (r.signed_transaction_shape ? "｜" + r.signed_transaction_shape : "") + "。Claude に戻って「承認した」と伝えてください。", r.paid === false ? "" : "err");
   } catch (e) {
     $("approve").disabled = false;
     msg("署名されませんでした：" + (e && e.message ? e.message : e), "err");

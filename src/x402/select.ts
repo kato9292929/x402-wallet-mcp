@@ -16,6 +16,8 @@ export interface SelectionContext {
   neverminedEnv?: string;
   /** Networks this host refused a payment on recently (net-failures.jsonl). Never chosen. */
   avoidNetworks?: string[];
+  /** Among options of the same scheme and price, networks earlier in this list are chosen first. */
+  preferNetworks?: string[];
 }
 
 /** sandbox-type keys pay testnets only, live-type keys mainnets only. */
@@ -91,7 +93,7 @@ export function evaluate(accepts: Requirement[], ctx: SelectionContext): Candida
 
 /**
  * Picks the requirement to pay: the first usable scheme in priority order,
- * cheapest first within a scheme.
+ * cheapest first within a scheme, then by preferNetworks, then by the seller's order.
  */
 export function selectRequirement(accepts: Requirement[], ctx: SelectionContext): Requirement | undefined {
   const usable = evaluate(accepts, ctx)
@@ -103,7 +105,14 @@ export function selectRequirement(accepts: Requirement[], ctx: SelectionContext)
     if (pa !== pb) return pa - pb;
     const ca = a.priceMicros ?? 0n;
     const cb = b.priceMicros ?? 0n;
-    return ca < cb ? -1 : ca > cb ? 1 : a.index - b.index;
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    const rank = (n: string) => {
+      const i = ctx.preferNetworks?.indexOf(n) ?? -1;
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    const ra = rank(a.network);
+    const rb = rank(b.network);
+    return ra !== rb ? ra - rb : a.index - b.index;
   });
   return usable[0];
 }

@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign as edSign } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -161,20 +161,33 @@ describe("make_x402_request (safe buy)", () => {
     expect(guard.sessionSpentMicros).toBe(0n);
   });
 
-  it("402 again after paying, no transfer: rejected_by_seller, (host, network) remembered", async () => {
-    const { requester, netFailuresFile, guard } = setup({
-      seller: [res402([exactReq("1000")]), res402([exactReq("1000")])],
-      chain: { settlement: "not_found", tx: null, transferred: null, headerTxMatched: null },
+  it("402 again after paying with no transaction: returned at once, not looked up on chain, network not avoided", async () => {
+    for (const error of ["invalid_exact_svm_transaction_simulation_failed: BlockhashNotFound", "invalid_exact_evm_payload_signature", ""]) {
+      const { requester, netFailuresFile, guard, findPayment } = setup({
+        seller: [res402([exactReq("1000")]), res402([exactReq("1000")], { error })],
+      });
+      const r = await requester.request({ url: URL_ });
+      expect(r).toMatchObject({ status: "rejected_by_seller", settlement: "not_checked", paid: false });
+      expect(findPayment).not.toHaveBeenCalled();
+      expect(guard.sessionSpentMicros).toBe(0n);
+      expect(existsSync(netFailuresFile)).toBe(false);
+    }
+  });
+
+  it("refused because the network is not accepted: (host, network) remembered for 24 hours", async () => {
+    const { requester, netFailuresFile } = setup({
+      seller: [res402([exactReq("1000")]), res402([exactReq("1000")], { error: "unsupported_network" })],
     });
     const r = await requester.request({ url: URL_ });
-    expect(r).toMatchObject({ status: "rejected_by_seller", settlement: "not_found" });
-    expect(guard.sessionSpentMicros).toBe(0n);
+    expect(r).toMatchObject({ status: "rejected_by_seller", refusal_reason: "unsupported_network" });
     const rec = JSON.parse(readFileSync(netFailuresFile, "utf8").trim());
     expect(rec).toMatchObject({ host: "seller.test", network: BASE_SEPOLIA });
   });
 
-  it("402 again after paying, transfer landed: not_delivered / verified, not re-sent", async () => {
-    const { requester, sellerCalls } = setup({ seller: [res402([exactReq("1000")]), res402([exactReq("1000")])] });
+  it("402 again after paying, settlement attempted and transfer landed: not_delivered / verified, not re-sent", async () => {
+    const { requester, sellerCalls } = setup({
+      seller: [res402([exactReq("1000")]), res402([exactReq("1000")], { error: "settle_failed: timeout" })],
+    });
     const r = await requester.request({ url: URL_ });
     expect(r).toMatchObject({ status: "not_delivered", settlement: "verified", refetched: false });
     expect(sellerCalls).toHaveLength(2);

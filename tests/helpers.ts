@@ -29,10 +29,10 @@ export const paymentRequired = (accepts: unknown[]) => ({
 
 export const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
 
-export function res402(accepts: unknown[]): Response {
+export function res402(accepts: unknown[], extra: Record<string, unknown> = {}): Response {
   return new Response("{}", {
     status: 402,
-    headers: { "payment-required": b64(paymentRequired(accepts)), "content-type": "application/json" },
+    headers: { "payment-required": b64({ ...paymentRequired(accepts), ...extra }), "content-type": "application/json" },
   });
 }
 
