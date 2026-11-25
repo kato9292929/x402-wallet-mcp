@@ -416,10 +416,36 @@ async function ataOf(owner: string, mint: string, tokenProgram: string): Promise
  *    payer's funds; with extra.memo, exactly one memo carrying it (§3.1).
  * Returns the reason when it fails.
  */
+/**
+ * What the wallet changed between the transaction we built and the one it signed: the transaction
+ * version, the recent blockhash and the number of instructions, e.g.
+ * "version 0 → 0 · blockhash replaced · instructions 4 → 8". Adding instructions (Lighthouse) and
+ * replacing the blockhash are separate changes and are reported separately.
+ */
+export function solanaWalletChanges(built: Uint8Array, signed: Uint8Array): string {
+  const read = (bytes: Uint8Array) => {
+    try {
+      const m: any = getCompiledTransactionMessageDecoder().decode(bytes);
+      return { version: String(m.version), blockhash: String(m.lifetimeToken ?? ""), count: m.instructions?.length ?? m.numInstructions ?? "?" };
+    } catch {
+      return null;
+    }
+  };
+  const a = read(built);
+  const b = read(signed);
+  if (!a || !b) return "unreadable";
+  return [
+    `version ${a.version} → ${b.version}`,
+    a.blockhash === b.blockhash ? "blockhash kept" : "blockhash replaced",
+    `instructions ${a.count} → ${b.count}`,
+  ].join(" · ");
+}
+
 /** What a signed Solana transaction contains, for error messages: each instruction's program, first data byte and whether it reads the fee payer. */
 export function describeSolanaMessage(message: Uint8Array, feePayer: string): string {
   try {
     const m: any = getCompiledTransactionMessageDecoder().decode(message);
+    if (!Array.isArray(m.instructions)) return `version ${m.version}, ${m.numInstructions ?? "?"} instructions`;
     const keys: string[] = m.staticAccounts;
     return m.instructions
       .map((ix: any, i: number) => {
@@ -443,6 +469,7 @@ export async function solanaPaymentProblem(message: Uint8Array, want: SolanaPaym
   } catch {
     return "the transaction could not be read";
   }
+  if (!Array.isArray(m.instructions)) return `the wallet returned a version ${m.version} transaction, which this check cannot read`;
   const keys: string[] = m.staticAccounts;
   if (m.addressTableLookups?.length) return "it uses address lookup tables";
   if (keys[0] !== want.feePayer) return "the fee payer is not the facilitator";
@@ -511,11 +538,12 @@ async function attachSignature(b: BuildRecord, payer: string, signature: string,
         throw new FlowError("ウォレットが返した取引を読めませんでした。支払いはしていません。");
       }
     }
+    const changes = solanaWalletChanges(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
     const problem = await solanaPaymentProblem(new Uint8Array(tx.messageBytes), want!);
     if (problem) {
       const shape = describeSolanaMessage(new Uint8Array(tx.messageBytes), want!.feePayer);
-      console.log(`[agentpay402] refused signed payment: ${problem} | ${shape}`);
-      throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${shape}）。支払いはしていません。`);
+      console.log(`[agentpay402] refused signed payment: ${problem} | ${changes} | ${shape}`);
+      throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${changes}｜${shape}）。支払いはしていません。`);
     }
     if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
       throw new FlowError("この支払いに対する、指定した財布の署名ではありません。支払いはしていません。");
@@ -565,7 +593,10 @@ export async function signAndPay(id: string, token: string | null, signature: st
       ...(err instanceof PaymentError ? err.details : {}),
     };
   }
-  if (want) result.signed_transaction_shape = describeSolanaMessage(signedMessageOf(payment), want.feePayer);
+  if (want) {
+    result.signed_transaction_shape = describeSolanaMessage(signedMessageOf(payment), want.feePayer);
+    result.wallet_changes = solanaWalletChanges(new Uint8Array(getBase64Encoder().encode(b.messageBytes!)), signedMessageOf(payment));
+  }
   if (result.paid !== false) await addSpent(deps.store, rec.payer, BigInt(prep.selected.priceMicros ?? 0n));
   await finishWith(rec, result, deps);
   return {
@@ -575,6 +606,7 @@ export async function signAndPay(id: string, token: string | null, signature: st
     message: result.message,
     seller_error: result.status === "rejected_by_seller" ? sellerError(result.body) : undefined,
     signed_transaction_shape: result.signed_transaction_shape,
+    wallet_changes: result.wallet_changes,
   };
 }
 

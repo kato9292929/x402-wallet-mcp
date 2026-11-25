@@ -8,6 +8,7 @@ import {
   getResult,
   phantomBrowseLink,
   solanaPaymentProblem,
+  solanaWalletChanges,
   LIGHTHOUSE_PROGRAM,
   rejectPayment,
   requestPayment,
@@ -229,6 +230,28 @@ describe("remote: checking a signed Solana payment by its outcome", async () => 
     // Lighthouse variants that can change state are refused.
     const memoryWrite = new web3.TransactionInstruction({ programId: LH, keys: [{ pubkey: ata(payer), isSigner: false, isWritable: true }], data: Buffer.from([0]) });
     expect(await solanaPaymentProblem(msg([...x402, memoryWrite]), want)).toMatch(/not an assertion/);
+  });
+
+  it("reports what the wallet changed: version, blockhash and instruction count, separately", async () => {
+    const at = (ixs: any[], blockhash: string) =>
+      new web3.TransactionMessage({ payerKey: feePayer, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message().serialize();
+    const bh = web3.Keypair.generate().publicKey.toBase58();
+    const built = at(x402, bh);
+    expect(solanaWalletChanges(built, built)).toBe("version 0 → 0 · blockhash kept · instructions 4 → 4");
+    expect(solanaWalletChanges(built, at([lighthouse, ...x402, lighthouse], bh))).toBe("version 0 → 0 · blockhash kept · instructions 4 → 6");
+    expect(solanaWalletChanges(built, at(x402, web3.Keypair.generate().publicKey.toBase58()))).toBe("version 0 → 0 · blockhash replaced · instructions 4 → 4");
+
+    // A version 1 transaction (a different layout) is reported and refused with a readable reason, not a crash.
+    const k = await import("@solana/kit");
+    const v1 = k.pipe(
+      k.createTransactionMessage({ version: 1 }),
+      (x: any) => k.setTransactionMessageFeePayer(k.address(feePayer.toBase58()), x),
+      (x: any) => k.setTransactionMessageLifetimeUsingBlockhash({ blockhash: k.blockhash(bh), lastValidBlockHeight: 1n }, x),
+      (x: any) => k.appendTransactionMessageInstructions([{ programAddress: k.address(MEMO.toBase58()), data: new Uint8Array([1]) }], x),
+    );
+    const v1bytes = new Uint8Array(k.getCompiledTransactionMessageEncoder().encode(k.compileTransactionMessage(v1 as any)));
+    expect(solanaWalletChanges(built, v1bytes)).toBe("version 0 → 1 · blockhash kept · instructions 4 → 1");
+    expect(await solanaPaymentProblem(v1bytes, want)).toMatch(/version 1/);
   });
 
   it("checks the seller's memo when it is set", async () => {
