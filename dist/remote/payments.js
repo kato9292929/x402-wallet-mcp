@@ -133,18 +133,30 @@ export async function requestPayment(params, input, origin, deps) {
     };
     await deps.store.set(K.pending(rec.id), rec, PENDING_TTL_S);
     const approveUrl = `${origin}/approve/${rec.id}?t=${rec.token}`;
+    const solana = CHAINS[sel.network]?.family === "solana";
+    const signWith = solana ? "Phantom" : "Rabby / MetaMask";
     return JSON.parse(toJson({
         url: input.url,
         status: "awaiting_approval",
         request_id: rec.id,
         approve_url: approveUrl,
-        phantom_app_url: phantomBrowseLink(approveUrl, origin),
+        phantom_app_url: solana ? phantomBrowseLink(approveUrl, origin) : undefined,
         expires_at: new Date(rec.expiresAt).toISOString(),
-        payment: { network: sel.network, chain: CHAINS[sel.network]?.name, priceUsd: rec.priceUsd, payTo: sel.payTo, payer: payer || "chosen by the user on the approval page" },
+        payment: {
+            network: sel.network,
+            chain: CHAINS[sel.network]?.name,
+            sign_with: signWith,
+            priceUsd: rec.priceUsd,
+            payTo: sel.payTo,
+            payer: payer || `the ${signWith} wallet the user connects on the approval page`,
+        },
         probe: prep.probeOut,
         price_check: prep.priceCheck,
         warnings: prep.warnings.length ? prep.warnings : undefined,
-        next_step: "Nothing has been paid yet. Show the user approve_url as a link (and phantom_app_url for approving on a phone in the Phantom app). " +
+        next_step: `Nothing has been paid yet. Tell the user this is paid on ${CHAINS[sel.network]?.name} and signed in ${signWith}. ` +
+            (solana
+                ? "Show the user approve_url as a link (and phantom_app_url for approving on a phone in the Phantom app). "
+                : "Show the user approve_url as a link to open in a browser with Rabby or MetaMask. ") +
             "The link expires in 5 minutes. After the user says they approved or rejected, call get_x402_result with request_id.",
     }));
 }

@@ -195,6 +195,7 @@ export class X402Requester {
     return {
       priority: schemePriority(),
       walletChains: this.deps.provider?.chains() ?? [],
+      preferNetworks: this.deps.provider?.preferredChains?.() ?? [],
       mode: cfg.network,
       nevermined: neverminedConfigured(),
       neverminedEnv: neverminedEnvironment(),

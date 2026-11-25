@@ -31,6 +31,8 @@ export interface WalletProvider {
   id: ProviderId;
   /** CAIP-2 chains this wallet can pay on, e.g. "eip155:84532". */
   chains(): string[];
+  /** Order of preference among chains() when a seller takes several at the same price. Default: none. */
+  preferredChains?(): string[];
   address(chain: string): Promise<string>;
   usdcBalance(chain: string): Promise<string>;
   /** Extra balances worth showing (e.g. Crossmint's USDXM on staging). */

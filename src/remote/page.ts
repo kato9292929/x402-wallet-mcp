@@ -31,6 +31,7 @@ export function approvalPage(rec: PendingRecord, origin: string): string {
     amount: rec.priceUsd,
     to: rec.payTo,
     chainName: chain.name,
+    walletName: family === "solana" ? "Phantom" : "Rabby / MetaMask",
     chainId,
     chainParams: chainId ? (CHAIN_PARAMS[chainId] ?? null) : null,
     testnet: chain.testnet,
@@ -69,7 +70,8 @@ const short = (a) => (a && a.length > 16 ? a.slice(0, 6) + "…" + a.slice(-6) :
 const setFull = (id, text, full) => { $(id).textContent = text; if (full) $(id).title = full; };
 $("host").textContent = new URL(d.url).host;
 $("amount").textContent = d.amount + " USDC";
-$("chain").textContent = d.chainName + " で支払い";
+$("chain").textContent = d.chainName + " で支払い（" + d.walletName + " で署名）";
+$("approve").textContent = d.walletName + " で署名する";
 setFull("to", short(d.to), d.to);
 setFull("from", d.address ? short(d.address) : "承認するときに選ぶ財布", d.address);
 setFull("url", new URL(d.url).pathname, d.url);

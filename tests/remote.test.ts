@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { BASE, BASE_SEPOLIA } from "../src/chains.js";
+import { BASE, BASE_SEPOLIA, SOLANA_DEVNET } from "../src/chains.js";
 import { ParamError, parseParams } from "../src/remote/params.js";
 import {
   MAX_PENDING_PER_ADDRESS,
@@ -26,7 +26,7 @@ const URL_ = "https://seller.test/api";
 const ORIGIN = "https://agentpay.test";
 const TX = "0x" + "ab".repeat(32);
 
-function setup(opts: { amount?: string; seller?: () => Response; chain?: Partial<ChainResult> } = {}) {
+function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Response; chain?: Partial<ChainResult> } = {}) {
   const sellerCalls: RequestInit[] = [];
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -34,7 +34,7 @@ function setup(opts: { amount?: string; seller?: () => Response; chain?: Partial
     if (url.startsWith(URL_)) {
       sellerCalls.push(init ?? {});
       const paid = new Headers(init?.headers).has("payment-signature");
-      if (!paid) return res402([exactReq(opts.amount ?? "5000", BASE_SEPOLIA)]);
+      if (!paid) return res402(opts.accepts ?? [exactReq(opts.amount ?? "5000", BASE_SEPOLIA)]);
       return opts.seller ? opts.seller() : res200({ ok: true }, { success: true, transaction: TX, network: BASE_SEPOLIA });
     }
     throw new Error(`unexpected fetch ${url}`);
@@ -81,13 +81,68 @@ describe("remote: connection URL", () => {
   });
 });
 
+describe("remote: choosing the chain (any connection URL pays on Solana and Base)", async () => {
+  const { Keypair } = await import("@solana/web3.js");
+  const sol = Keypair.generate().publicKey.toBase58();
+  const solReq = (amount = "5000") => exactReq(amount, SOLANA_DEVNET, { feePayer: Keypair.generate().publicKey.toBase58() });
+  const url = (q: string) => parseParams(new URL(`${ORIGIN}/mcp?${q}network=testnet`));
+  const { requesterFor } = await import("../src/remote/payments.js");
+
+  it("with solana= only, a Base-only seller is payable on Base and signed in Rabby / MetaMask", async () => {
+    const { deps } = setup();
+    const params = url(`solana=${sol}&`);
+    const check: any = await (await requesterFor(params, deps)).checkRequirements({ url: URL_ });
+    expect(check.accepts[0]).toMatchObject({ payable: true });
+    expect(check.wouldPay.network).toBe(BASE_SEPOLIA);
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    expect(r).toMatchObject({ status: "awaiting_approval", payment: { network: BASE_SEPOLIA, sign_with: "Rabby / MetaMask" } });
+    expect(r.phantom_app_url).toBeUndefined();
+  });
+
+  it("at the same price, picks the chain whose address is in the URL; with none, Solana", async () => {
+    const accepts = [exactReq("5000", BASE_SEPOLIA), solReq("5000")]; // Base listed first, like Agent402
+    const pick = async (q: string) => (await requestPayment(url(q), { url: URL_ }, ORIGIN, setup({ accepts }).deps)).payment;
+    expect(await pick(`solana=${sol}&`)).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
+    expect(await pick(`base=${owner.address}&`)).toMatchObject({ network: BASE_SEPOLIA, sign_with: "Rabby / MetaMask" });
+    expect(await pick("")).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
+    // A cheaper chain still wins over the preferred one.
+    const cheaperBase = [exactReq("4000", BASE_SEPOLIA), solReq("5000")];
+    const r = await requestPayment(url(`solana=${sol}&`), { url: URL_ }, ORIGIN, setup({ accepts: cheaperBase }).deps);
+    expect(r.payment.network).toBe(BASE_SEPOLIA);
+  });
+
+  it("with /mcp only, a Base-only seller gets a link and the EVM wallet connected on the page pays, within its limits", async () => {
+    const { deps, sellerCalls } = setup({ amount: "6000" });
+    const params = parseParams(new URL(`${ORIGIN}/mcp?network=testnet&daily=0.01`));
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    expect(r).toMatchObject({ status: "awaiting_approval", payment: { network: BASE_SEPOLIA, sign_with: "Rabby / MetaMask" } });
+    const built = await buildPayment(r.request_id, tokenOf(r.approve_url), deps, owner.address);
+    expect(built.family).toBe("evm");
+    expect(await signAndPay(r.request_id, tokenOf(r.approve_url), await signTyped(owner, built.typedData as string), deps)).toMatchObject({
+      status: "fulfilled",
+      paid: true,
+    });
+    expect(new Headers(sellerCalls.at(-1)!.headers).get("payment-signature")).toBeTruthy();
+
+    // The 24-hour limit counts what that Base wallet already paid: 0.006 + 0.006 > 0.01.
+    const r2 = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    expect(r2.status).toBe("awaiting_approval"); // no wallet known yet
+    await expect(buildPayment(r2.request_id, tokenOf(r2.approve_url), deps, owner.address)).rejects.toThrow(/払う前の確認で止まりました/);
+    expect((await getResult(r2.request_id, deps)).status).toBe("blocked");
+    // Another wallet has its own 24 hours.
+    const r3 = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    expect((await buildPayment(r3.request_id, tokenOf(r3.approve_url), deps, stranger.address)).family).toBe("evm");
+  });
+});
+
 describe("remote: approval flow (Base)", () => {
   it("pays only after approval and signature, once", async () => {
     const { deps, params, sellerCalls } = setup();
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     expect(r.status).toBe("awaiting_approval");
     expect(r.approve_url).toMatch(new RegExp(`^${ORIGIN}/approve/[0-9a-f]{32}\\?t=[0-9a-f]{32}$`));
-    expect(r.phantom_app_url).toContain("phantom.app/ul/browse/");
+    expect(r.phantom_app_url).toBeUndefined(); // Base: signed in Rabby / MetaMask, not Phantom
+    expect(r.payment.sign_with).toBe("Rabby / MetaMask");
     expect((await getResult(r.request_id, deps)).status).toBe("awaiting_approval");
     expect(sellerCalls).toHaveLength(1); // the unpaid 402 only
 
