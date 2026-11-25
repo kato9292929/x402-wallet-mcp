@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AgentPay402 MCP 利用規約</title>
+<meta name="theme-color" content="#151517">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300..600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#151517;--ink:#ededed;--muted:#b4b4b8;--dim:#6e6e73;--line:rgba(255,255,255,.12);--gutter:clamp(16px,2.6vw,28px);
+  --sans:"Outfit","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Yu Gothic",Meiryo,system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid #fff;outline-offset:3px;border-radius:6px}
+.nav{display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 var(--gutter)}
+.brand{font-size:20px;font-weight:500;letter-spacing:-.02em}
+.nav nav{display:flex;gap:20px;font-size:14px;color:var(--muted)}
+.nav nav a:hover,.nav nav a[aria-current]{color:var(--ink)}
+main{max-width:760px;margin:0 auto;padding:clamp(40px,7vw,80px) var(--gutter) 0}
+h1{font-size:clamp(28px,4vw,40px);font-weight:500;letter-spacing:-.01em;line-height:1.3}
+.date{color:var(--dim);font-size:14px;margin:12px 0 40px}
+h2{font-size:19px;font-weight:500;margin:44px 0 14px;padding-top:24px;border-top:1px solid var(--line)}
+p,li,td,th{font-size:15px;line-height:1.9;color:var(--muted)}
+p+p{margin-top:12px}
+ol,ul{padding-left:1.6em;margin:8px 0}
+ol ol,ul ul,ol ul,ul ol{margin:4px 0}
+li{margin:2px 0}
+li::marker{color:var(--dim)}
+.table{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:520px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink);font-weight:500;font-size:14px}
+tr:last-child td{border-bottom:none}
+.foot{max-width:760px;margin:80px auto 0;padding:24px var(--gutter) 40px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;font-size:14px;color:var(--dim)}
+.foot nav{display:flex;gap:20px}
+.foot a{color:var(--muted)} .foot a:hover{color:var(--ink)}
+@media (max-width:640px){.foot{flex-direction:column}}
+</style>
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="/">AgentPay</a>
+  <nav aria-label="Legal"><a href="/terms"aria-current="page">利用規約</a><a href="/privacy">プライバシーポリシー</a></nav>
+</header>
+<main>
+<h1>AgentPay402 MCP 利用規約</h1>
+<p class="date">制定日：2026年11月25日</p>
+<p>この利用規約（以下「本規約」）は、x402株式会社（以下「当社」）が提供する「AgentPay402 MCP」（以下「本サービス」）の利用条件を定めるものです。本サービスを利用する方（以下「利用者」）は、本規約に同意したうえで本サービスを利用するものとします。本サービスを利用した時点で、本規約に同意したものとみなします。</p>
+<h2>第1条（定義）</h2>
+<p>本規約で使う用語の意味は次のとおりです。</p>
+<ol><li>
+「x402」とは、HTTPの402 Payment Requiredを使い、APIの利用料を1回の呼び出しごとに支払うためのオープンな規格をいいます。
+</li><li>
+「seller」とは、x402で有料のAPI等を提供する事業者をいいます。
+</li><li>
+「facilitator」とは、sellerの依頼を受けて、x402の支払いの確認とブロックチェーンへの送信を行う事業者をいいます。
+</li><li>
+「AIアシスタント」とは、Claudeその他、利用者が本サービスを接続して使う対話型のAIをいいます。
+</li><li>
+「ウォレット」とは、利用者が自ら管理する暗号資産ウォレット（Phantom、Rabby、MetaMask等）をいいます。
+</li><li>
+「承認リンク」とは、本サービスが支払いごとに発行する、支払い内容の確認と署名のためのページへのリンクをいいます。
+</li></ol>
+<h2>第2条（本サービスの内容）</h2>
+<ol><li>
+本サービスは、AIアシスタントからx402に対応したAPIを利用するための機能を、MCP（Model Context Protocol）のサーバーとして提供するものです。主な機能は次のとおりです。
+<ol><li>
+x402に対応したAPIの検索、価格・支払い条件の確認
+</li><li>
+支払いの前の確認（利用者が設定した上限、sellerの納品の記録等）と、承認リンクの発行
+</li><li>
+利用者がウォレットで署名した取引の確認と、sellerへの送信
+</li><li>
+支払いの結果と、APIの応答のAIアシスタントへの返却
+</li></ol>
+</li><li>
+本サービスは、利用者の秘密鍵を預からず、利用者に代わって署名しません。支払いは、利用者が承認リンクを開き、自らのウォレットで署名した場合に限り行われます。
+</li><li>
+本サービスは、利用者の資金を預からず、支払いを中継しません。支払いは、利用者のウォレットからsellerが指定する受取先へ、ブロックチェーン上で直接行われます。
+</li><li>
+当社は、利用者とsellerとの間の取引の当事者ではありません。APIの内容、品質、提供の有無その他sellerとの取引に関する事項は、利用者とsellerとの間で解決するものとします。
+</li></ol>
+<h2>第3条（アルファ版）</h2>
+<ol><li>
+本サービスはアルファ版として提供するものであり、機能、仕様、対応するネットワーク及びウォレットは、予告なく変更、追加又は廃止されることがあります。
+</li><li>
+本サービスは開発中であり、不具合を含む可能性があります。利用者は、このことを理解したうえで本サービスを利用するものとします。
+</li></ol>
+<h2>第4条（利用料）</h2>
+<p>本サービスの利用料は、現在無料です。利用料を設ける場合は、事前に当社のウェブサイト等で告知します。なお、sellerに支払うAPIの利用料その他ブロックチェーン上の取引に伴う費用は、利用者の負担とします。</p>
+<h2>第5条（利用資格・提供地域）</h2>
+<ol><li>
+本サービスは、18歳以上の方に限り利用できるものとします。
+</li><li>
+次のいずれかに該当する方は、本サービスを利用できません。
+<ol><li>
+キューバ、イラン、北朝鮮、ウクライナのクリミア・ドネツク・ルハンスク・ヘルソン・ザポリージャの各地域その他、日本、国際連合、米国、英国又は欧州連合の包括的な経済制裁の対象となっている国又は地域に所在し、又は居住する方
+</li><li>
+日本、国際連合、米国、英国又は欧州連合の制裁対象者として指定されている方、及びその方が所有し、又は支配する法人その他の団体
+</li><li>
+暗号資産又はステーブルコインの取引が法令で禁止されている国又は地域に所在し、又は居住する方
+</li></ol>
+</li><li>
+利用者は、前項のいずれにも該当しないことを表明し、保証するものとします。
+</li><li>
+利用者は、VPNその他の手段により、前二項の制限を回避してはなりません。
+</li></ol>
+<h2>第6条（利用者の責任）</h2>
+<ol><li>
+利用者は、自らのウォレット、秘密鍵、復元フレーズ等を自らの責任で管理するものとします。
+</li><li>
+利用者は、署名の前に、承認リンクに表示される支払い先、金額、ネットワーク、払うウォレット及びAPIを確認するものとします。署名された支払いは、利用者の意思によるものとして扱います。
+</li><li>
+利用者は、必要に応じて、接続URLで1回の上限及び24時間の合計上限を設定するものとします。
+</li><li>
+AIアシスタントは、利用者の依頼に基づいて支払いの依頼を作成します。利用者は、AIアシスタントの判断が誤る場合があることを理解し、承認リンクの内容を確認したうえで署名するものとします。
+</li><li>
+利用者は、自らが居住する国又は地域の法令を守って本サービスを利用するものとします。
+</li></ol>
+<h2>第7条（ブロックチェーン上の取引）</h2>
+<ol><li>
+ブロックチェーン上で行われた支払いは、性質上、取り消し、返金又は変更ができません。当社は、利用者が署名した支払いを取り消し、又は返金する手段を持ちません。
+</li><li>
+ブロックチェーン、ウォレット、seller又はfacilitatorの不具合、仕様変更、混雑その他当社の管理の及ばない事由により、支払いが行われない、遅れる、又は支払った後にAPIの応答が得られない場合があります。
+</li><li>
+本サービスは、支払いの後にブロックチェーン上の送金を確認し、その結果を利用者に示しますが、sellerによる納品を保証するものではありません。
+</li></ol>
+<h2>第8条（禁止事項）</h2>
+<p>利用者は、本サービスの利用にあたり、次の行為をしてはなりません。</p>
+<ol><li>
+法令又は公序良俗に違反する行為
+</li><li>
+犯罪による収益の移転、制裁対象者との取引その他の不正な資金の移動に関わる行為
+</li><li>
+第三者のウォレットを無断で使う行為
+</li><li>
+本サービスのサーバー又はネットワークに過度の負荷をかける行為、又は本サービスの運営を妨げる行為
+</li><li>
+本サービスの不具合を不正に利用する行為、又は本サービスに不正にアクセスする行為
+</li><li>
+その他、前各号に準ずる行為
+</li></ol>
+<h2>第9条（利用の停止）</h2>
+<p>当社は、利用者が本規約に違反した場合、又は第5条第2項のいずれかに該当すると判断した場合には、事前の通知なく、利用者による本サービスの利用の全部又は一部を停止することができます。</p>
+<h2>第10条（本サービスの変更・中断・終了）</h2>
+<ol><li>
+当社は、事前の通知なく、本サービスの内容を変更し、又は提供を中断することができます。
+</li><li>
+当社は、当社のウェブサイト等で告知したうえで、本サービスの提供を終了することができます。
+</li></ol>
+<h2>第11条（保証の否認）</h2>
+<p>当社は、本サービスについて、特定の目的への適合性、正確性、完全性、継続性、セキュリティ上の欠陥がないこと、及び不具合がないことを保証しません。本サービスが示すsellerの記録その他の情報は、参考として提供するものであり、その正確性を保証するものではありません。</p>
+<h2>第12条（免責）</h2>
+<ol><li>
+当社は、本サービスの利用に関して利用者に生じた損害について、当社の債務不履行又は不法行為による場合に限り、賠償の責任を負います。
+</li><li>
+前項の場合において、当社の責任は、当社、当社の代表者又は当社の従業員の重大な過失を除く過失（軽過失）による場合に限り、利用者に現実に生じた通常の損害の範囲内で、当該損害の原因となった支払いの金額を上限とします。当社の故意又は重大な過失による場合には、本項は適用しません。
+</li><li>
+当社は、seller、facilitator、ウォレット、ブロックチェーン及びAIアシスタントの提供者の行為又は不具合によって生じた損害について、責任を負いません。
+</li></ol>
+<h2>第13条（知的財産権）</h2>
+<p>本サービスに関する著作権その他の知的財産権は、当社又は正当な権利者に帰属します。ただし、本サービスのうちオープンソースとして公開しているソフトウェアについては、そのライセンスの定めに従います。</p>
+<h2>第14条（個人情報等の取扱い）</h2>
+<p>当社は、本サービスの利用に伴って取得する情報を、別に定める「AgentPay402 MCP プライバシーポリシー」に従って取り扱います。</p>
+<h2>第15条（本規約の変更）</h2>
+<p>当社は、民法第548条の4の規定に基づき、本規約を変更することができます。本規約を変更する場合は、変更後の内容及び効力発生日を、効力発生日より前に当社のウェブサイト等で告知します。</p>
+<h2>第16条（準拠法・管轄）</h2>
+<p>本規約は日本法に準拠します。本サービスに関して当社と利用者との間に紛争が生じた場合は、東京地方裁判所を第一審の専属的合意管轄裁判所とします。</p>
+<h2>お問い合わせ</h2>
+<p>x402株式会社<br>東京都港区浜松町二丁目2番15号 浜松町ダイヤビル2F<br>E-mail：hello@x402jp.com</p>
+</main>
+<footer class="foot">
+  <span>AgentPay</span>
+  <nav aria-label="Footer"><a href="/">Home</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
+</footer>
+</body>
+</html>

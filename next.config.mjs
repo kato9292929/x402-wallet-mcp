@@ -1,8 +1,12 @@
 /** Remote server (app/): the route files only mount the handlers compiled into dist/remote. */
 export default {
-  // "/" shows the static front page in public/index.html.
+  // "/", "/terms" and "/privacy" show the static pages in public/.
   async rewrites() {
-    return [{ source: "/", destination: "/index.html" }];
+    return [
+      { source: "/", destination: "/index.html" },
+      { source: "/terms", destination: "/terms.html" },
+      { source: "/privacy", destination: "/privacy.html" },
+    ];
   },
   typescript: { tsconfigPath: "tsconfig.next.json" },
   serverExternalPackages: [
