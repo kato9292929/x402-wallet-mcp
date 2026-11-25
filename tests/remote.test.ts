@@ -9,6 +9,7 @@ import {
   phantomBrowseLink,
   solanaPaymentProblem,
   solanaWalletChanges,
+  solanaBlockhashes,
   LIGHTHOUSE_PROGRAM,
   rejectPayment,
   requestPayment,
@@ -97,6 +98,10 @@ describe("remote: approval flow (Base)", () => {
 
     const out = await signAndPay(r.request_id, t, await signTyped(owner, built.typedData as string), deps);
     expect(out).toMatchObject({ status: "fulfilled", paid: true });
+    // When each step happened: built ≤ signed ≤ sent ≤ result.
+    const tm = Object.values(out.timing as Record<string, string>).map((v) => Date.parse(v));
+    expect(tm).toHaveLength(4);
+    expect(tm.every((v, i) => !Number.isNaN(v) && (i === 0 || tm[i - 1] <= v))).toBe(true);
     const paidCall = sellerCalls.at(-1)!;
     expect(new Headers(paidCall.headers).get("payment-signature")).toBeTruthy();
 
@@ -240,6 +245,8 @@ describe("remote: checking a signed Solana payment by its outcome", async () => 
     expect(solanaWalletChanges(built, built)).toBe("version 0 → 0 · blockhash kept · instructions 4 → 4");
     expect(solanaWalletChanges(built, at([lighthouse, ...x402, lighthouse], bh))).toBe("version 0 → 0 · blockhash kept · instructions 4 → 6");
     expect(solanaWalletChanges(built, at(x402, web3.Keypair.generate().publicKey.toBase58()))).toBe("version 0 → 0 · blockhash replaced · instructions 4 → 4");
+    const other = web3.Keypair.generate().publicKey.toBase58();
+    expect(solanaBlockhashes(built, at(x402, other))).toEqual({ built: bh, signed: other });
 
     // A version 1 transaction (a different layout) is reported and refused with a readable reason, not a crash.
     const k = await import("@solana/kit");

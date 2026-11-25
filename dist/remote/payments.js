@@ -264,7 +264,7 @@ export async function buildPayment(id, token, deps, payerFromPage) {
         throw new FlowError("売り手の請求が、画面の内容から変わりました。支払いはしていません。", 409);
     }
     const built = await buildUnsigned(prep, rec.payer);
-    const record = { family: built.family, prep: toJson(prep), payload: toJson(built.payload) };
+    const record = { family: built.family, prep: toJson(prep), payload: toJson(built.payload), builtAt: Date.now() };
     let forPage;
     if (built.family === "solana") {
         if (!built.messageBytes)
@@ -330,18 +330,22 @@ async function ataOf(owner, mint, tokenProgram) {
  * "version 0 → 0 · blockhash replaced · instructions 4 → 8". Adding instructions (Lighthouse) and
  * replacing the blockhash are separate changes and are reported separately.
  */
+function readSolanaMessage(bytes) {
+    try {
+        const m = getCompiledTransactionMessageDecoder().decode(bytes);
+        return { version: String(m.version), blockhash: String(m.lifetimeToken ?? ""), count: m.instructions?.length ?? m.numInstructions ?? "?" };
+    }
+    catch {
+        return null;
+    }
+}
+/** The recent blockhash of the transaction we built and of the one the wallet signed, to look up later. */
+export function solanaBlockhashes(built, signed) {
+    return { built: readSolanaMessage(built)?.blockhash || null, signed: readSolanaMessage(signed)?.blockhash || null };
+}
 export function solanaWalletChanges(built, signed) {
-    const read = (bytes) => {
-        try {
-            const m = getCompiledTransactionMessageDecoder().decode(bytes);
-            return { version: String(m.version), blockhash: String(m.lifetimeToken ?? ""), count: m.instructions?.length ?? m.numInstructions ?? "?" };
-        }
-        catch {
-            return null;
-        }
-    };
-    const a = read(built);
-    const b = read(signed);
+    const a = readSolanaMessage(built);
+    const b = readSolanaMessage(signed);
     if (!a || !b)
         return "unreadable";
     return [
@@ -401,8 +405,8 @@ export async function solanaPaymentProblem(message, want) {
             // Only Lighthouse assertions (first byte 2..17) may be added; MemoryWrite (0), MemoryClose (1),
             // empty and unknown variants can change state and are refused (x402 exact SVM spec, guard
             // instructions). Phantom's assertions may read the fee payer (to check it keeps its SOL). They
-            // cannot move funds, so they are let through: whether the facilitator accepts them is its policy
-            // (spec-strict facilitators such as PayAI refuse them; Covenant and x402-doctor accept them).
+            // cannot move funds, so they are let through: whether the facilitator accepts them is its own
+            // policy, and facilitators differ.
             if (data.length === 0 || data[0] < 2 || data[0] > 17)
                 return "it has a Lighthouse instruction that is not an assertion";
             continue;
@@ -464,7 +468,8 @@ async function attachSignature(b, payer, signature, signedTx, want) {
         const problem = await solanaPaymentProblem(new Uint8Array(tx.messageBytes), want);
         if (problem) {
             const shape = describeSolanaMessage(new Uint8Array(tx.messageBytes), want.feePayer);
-            console.log(`[agentpay402] refused signed payment: ${problem} | ${changes} | ${shape}`);
+            const bh = solanaBlockhashes(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
+            console.log(`[agentpay402] refused signed payment: ${problem} | ${changes} | blockhash ${bh.built} → ${bh.signed} | ${shape}`);
             throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${changes}｜${shape}）。支払いはしていません。`);
         }
         if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
@@ -488,6 +493,7 @@ async function attachSignature(b, payer, signature, signedTx, want) {
     return { headers: new x402HTTPClient(new x402Client()).encodePaymentSignatureHeader(payload), payload };
 }
 export async function signAndPay(id, token, signature, deps, signedTx) {
+    const signedAt = Date.now();
     const rec = await pendingFor(id, token, deps);
     const b = await deps.store.get(K.build(id));
     if (!b)
@@ -504,6 +510,7 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
     const prep = fromJson(b.prep);
     const requester = await requesterFor(rec.params, deps);
     let result;
+    const sentAt = Date.now();
     try {
         result = await requester.payPrepared(prep, payment);
     }
@@ -518,9 +525,14 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
             ...(err instanceof PaymentError ? err.details : {}),
         };
     }
+    const iso = (t) => (t ? new Date(t).toISOString() : null);
+    // When each step happened, to tell where a slow payment spent its time.
+    result.timing = { built_at: iso(b.builtAt), signed_at: iso(signedAt), sent_at: iso(sentAt), result_at: iso(Date.now()) };
     if (want) {
+        const builtMsg = new Uint8Array(getBase64Encoder().encode(b.messageBytes));
         result.signed_transaction_shape = describeSolanaMessage(signedMessageOf(payment), want.feePayer);
-        result.wallet_changes = solanaWalletChanges(new Uint8Array(getBase64Encoder().encode(b.messageBytes)), signedMessageOf(payment));
+        result.wallet_changes = solanaWalletChanges(builtMsg, signedMessageOf(payment));
+        result.blockhash = solanaBlockhashes(builtMsg, signedMessageOf(payment));
     }
     if (result.paid !== false)
         await addSpent(deps.store, rec.payer, BigInt(prep.selected.priceMicros ?? 0n));
@@ -533,6 +545,8 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
         seller_error: result.status === "rejected_by_seller" ? sellerError(result.body) : undefined,
         signed_transaction_shape: result.signed_transaction_shape,
         wallet_changes: result.wallet_changes,
+        blockhash: result.blockhash,
+        timing: result.timing,
     };
 }
 function signedMessageOf(payment) {
