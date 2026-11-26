@@ -60,6 +60,8 @@ export interface Deps {
   findPayment?: (k: PayerKey, headerTx: string | null) => Promise<ChainResult>;
   /** Options for the default on-chain search. */
   findOptions?: FindOptions;
+  /** Gives up waiting for the seller's answer to the paid request after this many ms (the payment may still land). */
+  sellerTimeoutMs?: number;
   /** Where (host, network) refusals are remembered. */
   netFailuresFile?: string;
   /** Overrides where refusals are kept (the remote server keeps them in its store). */
@@ -604,7 +606,9 @@ export class X402Requester {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(input.url, buildInit(input, payment.headers));
+      const init = buildInit(input, payment.headers);
+      if (this.deps.sellerTimeoutMs) init.signal = AbortSignal.timeout(this.deps.sellerTimeoutMs);
+      res = await this.fetchImpl(input.url, init);
     } catch (err) {
       // The signed payment may or may not have reached the seller; keep it counted, never re-send.
       throw new PaymentError(`Request failed after signing the payment: ${(err as Error).message}. It was not re-sent.`, {

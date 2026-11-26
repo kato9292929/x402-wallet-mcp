@@ -490,7 +490,10 @@ export class X402Requester {
         });
         let res;
         try {
-            res = await this.fetchImpl(input.url, buildInit(input, payment.headers));
+            const init = buildInit(input, payment.headers);
+            if (this.deps.sellerTimeoutMs)
+                init.signal = AbortSignal.timeout(this.deps.sellerTimeoutMs);
+            res = await this.fetchImpl(input.url, init);
         }
         catch (err) {
             // The signed payment may or may not have reached the seller; keep it counted, never re-send.
