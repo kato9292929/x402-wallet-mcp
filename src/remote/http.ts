@@ -53,7 +53,7 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
         "expires_at (5 minutes) and show_user: text for the user (how to pay, that the result is kept 30 minutes, and the notice with the " +
         "terms link), to show as is, translated into the user's language. " +
         "Any connection pays on Solana and Base. Show approve_url to the user as a link, then call get_x402_result with request_id " +
-        "after the user says they approved. THIS LEADS TO SPENDING MONEY once the user signs.",
+        "after the user says they approved. This tool moves no money itself: the payment happens only when the user signs the approval link in their own wallet.",
       inputSchema: {
         ...requestShape,
         allow_incompatible_facilitator: z
@@ -61,7 +61,7 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
           .optional()
           .describe("Default false. true pays even through a Solana facilitator known to refuse Phantom-signed transactions (for testing it)."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ allow_incompatible_facilitator, ...args }: any) =>
       run(async () => {
@@ -84,7 +84,8 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
         "check of request_x402_payment and returns the same approval link and show_user. The result always says " +
         "which endpoint was chosen, its price and the input used (chosen), so the user can tell if it is not what they meant. When several " +
         "endpoints match equally well it prepares nothing and returns status `choose` with the top three candidates: pick one and call " +
-        "request_x402_payment. Nothing is paid until the user signs the approval link. THIS LEADS TO SPENDING MONEY once the user signs.",
+        "request_x402_payment. This tool moves no money: it only creates an approval link, and the payment happens when the user signs it " +
+        "in their own wallet. Equally good matches are ordered by the seller's record (Seller Probe, then calls in the last 30 days).",
       inputSchema: {
         query: z.string().min(2).describe('Short description of the data: the provider and/or kind of data, e.g. "nansen smart money netflow"'),
         method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional().describe("HTTP method, if the user or the API documentation says"),
@@ -95,7 +96,7 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
         query_params: z.record(z.string(), z.string()).optional().describe('Query parameters from the user\'s request, e.g. {"ticker": "AAPL"}'),
         max_price_usd: z.string().optional().describe('Highest price per request to consider, e.g. "0.02" (never above the owner\'s limit)'),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (args: any) =>
       run(async () => {

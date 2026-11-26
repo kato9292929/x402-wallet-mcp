@@ -19,7 +19,7 @@ const item = (resource: string, serviceName: string, description: string, amount
   extensions: { bazaar: { info: { input } } },
 });
 
-function deps(items: unknown[]) {
+function deps(items: unknown[], probe: (url: string) => Promise<any> = async () => ({ status: "unscored", host: "seller.test" })) {
   const sellerCalls: { url: string; init?: RequestInit }[] = [];
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -32,7 +32,7 @@ function deps(items: unknown[]) {
     store: memoryStore(),
     fetch: fetchMock,
     requesterOverrides: {
-      probe: async () => ({ status: "unscored", host: "seller.test" }) as any,
+      probe: probe as any,
       bazaarPrice: async () => null,
       checkPayTo: async () => ({ exists: true }),
       walletCode: async () => "0x",
@@ -63,6 +63,24 @@ describe("MCP instructions", () => {
     expect(json.result.instructions).toMatch(/has no account or API key for it/);
     expect(json.result.instructions).toMatch(/already has a connector for that provider, follow the user's choice/);
     expect(json.result.instructions).not.toMatch(/do not search|other connectors first|instead of|avoid/i);
+  });
+});
+
+describe("tool annotations", () => {
+  it("mark the link-making tools as additive, not destructive: money moves only when the user signs", async () => {
+    const res = await handleMcp(
+      new Request(`${ORIGIN}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      }),
+    );
+    const text = await res.text();
+    const json = JSON.parse(text.includes("data:") ? text.split("\n").find((l) => l.startsWith("data:"))!.slice(5) : text);
+    const byName = Object.fromEntries(json.result.tools.map((t: any) => [t.name, t.annotations]));
+    for (const name of ["buy_data", "request_x402_payment"]) {
+      expect(byName[name]).toMatchObject({ readOnlyHint: false, destructiveHint: false, openWorldHint: true });
+    }
   });
 });
 
@@ -116,6 +134,37 @@ describe("buy_data", () => {
     expect(r.candidates.map((c: any) => c.resource)).not.toContain("https://d.test/weather");
     expect(r.approve_url).toBeUndefined();
     expect(sellerCalls).toHaveLength(0);
+  });
+
+  it("tells equal matches apart by calls in the last 30 days", async () => {
+    const busy = { ...item("https://b.test/bitcoin/price", "Bitcoin price", "BTC spot price", "2000"), quality: { l30DaysTotalCalls: 900 } };
+    const { d } = deps([
+      { ...item("https://a.test/btc-price", "Bitcoin (BTC) price", "Current BTC price", "2000"), quality: { l30DaysTotalCalls: 12 } },
+      busy,
+    ]);
+    const r: any = await buyData(params, { query: "btc price" }, ORIGIN, d);
+    expect(r.status).toBe("awaiting_approval");
+    expect(r.chosen).toMatchObject({ resource: "https://b.test/bitcoin/price", calls_30d: 900 });
+  });
+
+  it("prefers a seller whose latest Seller Probe purchase was delivered, and drops one that was not", async () => {
+    const verdicts: Record<string, string> = { "a.test": "not_delivered", "c.test": "delivered" };
+    const probe = async (url: string) => {
+      const host = new URL(url).hostname;
+      return verdicts[host] ? { status: "scored", host, verdict: verdicts[host] } : { status: "unscored", host };
+    };
+    const { d } = deps(
+      [
+        { ...item("https://a.test/btc-price", "Bitcoin (BTC) price", "Current BTC price", "2000"), quality: { l30DaysTotalCalls: 5000 } },
+        { ...item("https://b.test/bitcoin/price", "Bitcoin price", "BTC spot price", "2000"), quality: { l30DaysTotalCalls: 900 } },
+        { ...item("https://c.test/btc/price", "BTC price", "Bitcoin price", "2000"), quality: { l30DaysTotalCalls: 3 } },
+      ],
+      probe,
+    );
+    const r: any = await buyData(params, { query: "btc price" }, ORIGIN, d);
+    expect(r.status).toBe("awaiting_approval");
+    expect(r.chosen).toMatchObject({ resource: "https://c.test/btc/price", seller_probe: "delivered" });
+    expect(r.other_candidates.map((c: any) => c.resource)).toEqual(["https://b.test/bitcoin/price"]);
   });
 
   it("skips endpoints over the price cap or with a path template, and says when nothing matches", async () => {

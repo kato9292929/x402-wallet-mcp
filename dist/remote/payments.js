@@ -5,7 +5,8 @@ import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { address as solAddress, getAddressEncoder, getProgramDerivedAddress, getBase58Encoder, getCompiledTransactionMessageDecoder, getBase64Decoder, getBase64Encoder, getTransactionDecoder, getTransactionEncoder, } from "@solana/kit";
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
 import { CHAINS, formatMicros, parseUsdToMicros } from "../chains.js";
-import { decide, describeCandidate, exampleConditions, findCandidates, requestFor } from "../buy.js";
+import { decide, describeCandidate, exampleConditions, findCandidates, rankByRecord, requestFor } from "../buy.js";
+import { lookupProbe } from "../safe/probe.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
 import { activeFeePayerRefusals, activeRefusals, FEE_PAYER_REFUSAL_TTL_MS, NET_REFUSAL_TTL_MS, } from "../safe/netfail.js";
@@ -201,7 +202,9 @@ export async function buyData(params, args, origin, deps) {
     const perCall = parseUsdToMicros(params.perCallMaxUsd);
     const asked = args.max_price_usd ? parseUsdToMicros(args.max_price_usd) : perCall;
     const cap = asked < perCall ? asked : perCall;
-    const candidates = await findCandidates(args, new AddressWallet(params).chains(), cap, deps.fetch);
+    const found = await findCandidates(args, new AddressWallet(params).preferredChains(), cap, deps.fetch);
+    // Equally good matches are told apart by the sellers' records (Seller Probe, then calls in the last 30 days).
+    const candidates = await rankByRecord(found, deps.requesterOverrides?.probe ?? ((url) => lookupProbe(url, deps.fetch ?? fetch, 3000)));
     if (!candidates.length) {
         return {
             status: "no_match",
@@ -218,7 +221,7 @@ export async function buyData(params, args, origin, deps) {
             paid: false,
             query: args.query,
             candidates: candidates.slice(0, 3).map(describeCandidate),
-            next_step: "Nothing was prepared: several endpoints match equally well. Pick the one that fits what the user asked for (ask the user if unclear), " +
+            next_step: "Nothing was prepared: several endpoints match equally well and have the same record. Pick the one that fits what the user asked for (ask the user if unclear), " +
                 "then call request_x402_payment with its resource URL and input, or buy_data again with a more specific query.",
         };
     }
