@@ -1,5 +1,5 @@
 import { CHAINS } from "../chains.js";
-import { APPROVAL_CSS, CHAIN_PARAMS } from "../providers/browser.js";
+import { APPROVAL_CSS, APPROVAL_FONTS, CHAIN_PARAMS } from "../providers/browser.js";
 import { phantomBrowseLink } from "./payments.js";
 // Pinned with Subresource Integrity: the page needs web3.js only to hand Phantom a transaction object.
 const SOLANA_WEB3 = {
@@ -9,8 +9,8 @@ const SOLANA_WEB3 = {
 const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export function messagePage(title, text) {
     return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentPay402</title><style>${APPROVAL_CSS}</style></head><body><main class="card">
-<div class="brand"><i></i>AgentPay402</div><p class="lead" style="font-size:16px;color:#fff;margin-top:24px">${esc(title)}</p>
+<title>AgentPay</title>${APPROVAL_FONTS}<style>${APPROVAL_CSS}</style></head><body><main class="card">
+<div class="brand">AgentPay</div><p class="lead" style="font-size:16px;color:var(--ink);margin-top:24px">${esc(title)}</p>
 <p class="lead">${esc(text)}</p></main></body></html>`;
 }
 export function approvalPage(rec, origin) {
@@ -38,13 +38,15 @@ export function approvalPage(rec, origin) {
     return `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>AgentPay402 支払いの承認</title>
+<title>AgentPay 支払いの承認</title>
+${APPROVAL_FONTS}
 <style>${APPROVAL_CSS}
 #approve{flex:2}
-.applink{display:block;text-align:center;margin-top:12px;font-size:13px;color:var(--accent);text-decoration:none}
+.applink{display:block;text-align:center;margin-top:12px;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.applink:hover{color:var(--ink)}
 </style></head><body>
 <main class="card">
-<div class="brand"><i></i>AgentPay402</div>
+<div class="brand">AgentPay</div>
 <div class="site"><span class="host" id="host"></span></div>
 <p class="lead">Claude がこの API に支払おうとしています</p>
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>
@@ -67,7 +69,7 @@ const setFull = (id, text, full) => { $(id).textContent = text; if (full) $(id).
 $("host").textContent = new URL(d.url).host;
 $("amount").textContent = d.amount + " USDC";
 $("chain").textContent = d.chainName + " で支払い（" + d.walletName + " で署名）";
-$("approve").textContent = d.walletName + " で署名する";
+$("approve").textContent = d.walletName + " で署名";
 setFull("to", short(d.to), d.to);
 setFull("from", d.address ? short(d.address) : "承認するときに選ぶウォレット", d.address);
 setFull("url", new URL(d.url).pathname, d.url);
