@@ -54,16 +54,21 @@ async function registerTools(server, params, origin, d) {
     register("buy_data", {
         title: "Buy data from a paid API (approval link)",
         description: "Use when the user wants data from a paid API and names the provider or the kind of data (e.g. \"nansen smart money netflow\", " +
-            "\"btc price\", \"sec filings aapl\"). In one call it searches the Bazaar, picks the best-matching endpoint this connection can pay " +
-            "within the per-payment limit (and max_price_usd), fills required input from the Bazaar's example when body / query_params are not " +
-            "given (then show_user starts with those conditions, and the user is asked to confirm them before signing), runs every pre-payment " +
-            "check of request_x402_payment and returns the same approval link and show_user. The result always says " +
-            "which endpoint was chosen, its price and the input used (chosen), so the user can tell if it is not what they meant. When several " +
-            "endpoints match equally well it prepares nothing and returns status `choose` with the top three candidates: pick one and call " +
+            "\"btc price\", \"sec filings aapl\"). Pass the input from the user's request in body / query_params (the token, ticker, address, chain " +
+            "or period they named). In one call it searches the Bazaar, picks the best-matching endpoint this connection can pay within the " +
+            "per-payment limit (and max_price_usd), skipping sellers whose latest Seller Probe purchase failed or was refused, runs every " +
+            "pre-payment check of request_x402_payment and returns the same approval link and show_user, with which endpoint was chosen, its " +
+            "price and the input used (chosen). If the endpoint requires input the request does not give, it prepares nothing and returns " +
+            "status `confirm_input` with the fields needed and the API's example values as suggestions: fill them from the user's words or ask " +
+            "the user, then call again (use_example: true only if the user accepts the example values; then show_user starts with those " +
+            "conditions). When several endpoints cannot be told apart it returns status `choose` with the top three candidates: pick one and call " +
             "request_x402_payment. This tool moves no money: it only creates an approval link, and the payment happens when the user signs it " +
-            "in their own wallet. Equally good matches are ordered by the seller's record (Seller Probe, then calls in the last 30 days).",
+            "in their own wallet.",
         inputSchema: {
-            query: z.string().min(2).describe('Short description of the data: the provider and/or kind of data, e.g. "nansen smart money netflow"'),
+            query: z
+                .string()
+                .min(2)
+                .describe('Short English keywords for the data: the provider and/or kind of data, e.g. "nansen smart money netflow", "btc price"'),
             method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional().describe("HTTP method, if the user or the API documentation says"),
             body: z
                 .union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())])
@@ -71,6 +76,10 @@ async function registerTools(server, params, origin, d) {
                 .describe("Request body built from the user's request (e.g. the token or address they asked about). Omit to use the Bazaar's example"),
             query_params: z.record(z.string(), z.string()).optional().describe('Query parameters from the user\'s request, e.g. {"ticker": "AAPL"}'),
             max_price_usd: z.string().optional().describe('Highest price per request to consider, e.g. "0.02" (never above the owner\'s limit)'),
+            use_example: z
+                .boolean()
+                .optional()
+                .describe("Default false. true fills required input the user did not give with the API's example values; only when the user agreed to them"),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     }, async (args) => run(async () => {

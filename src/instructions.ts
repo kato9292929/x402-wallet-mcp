@@ -14,8 +14,10 @@ export const REMOTE_INSTRUCTIONS = [
     "the user's choice.",
   "",
   "How:",
-  "1. buy_data with a short query (the provider's name and the kind of data). It finds the endpoint, fills its input and returns the " +
-    "approval link in one call. If it returns candidates instead, pick one (ask the user if unclear) and call request_x402_payment with it.",
+  "1. buy_data with a short query (the provider's name and the kind of data) and the input from the user's request in body / " +
+    "query_params (the token, ticker, address, chain or period they named). It finds the endpoint and returns the approval link in one " +
+    "call. If it returns confirm_input, fill the listed fields from the user's words or ask the user, then call it again. If it returns " +
+    "candidates, pick one (ask the user if unclear) and call request_x402_payment with it.",
   "   To look around first, use list_bazaar_resources with a short query, and get_resource_details to read an endpoint's input schema.",
   "2. Show the approval link together with show_user, in the user's language and in full.",
   "3. After the user says they approved, call get_x402_result and show the data.",

@@ -85,29 +85,96 @@ describe("tool annotations", () => {
 });
 
 describe("buy_data", () => {
-  it("picks the endpoint that matches the request, fills its input from the Bazaar example and returns the approval link", async () => {
-    const netflowBody = { chains: ["ethereum", "solana"] };
+  it("does not fill required input silently: returns confirm_input with the fields and the example as a suggestion", async () => {
+    const netflowExample = { chains: ["ethereum", "solana"], filters: { include_smart_money_labels: ["Smart Trader"] } };
+    const nansenNetflow = {
+      ...item("https://api.nansen.ai/api/v1/smart-money/netflow", "Nansen", "Get Smart Money Netflow Data", "50000", { method: "POST", body: netflowExample }),
+    };
+    (nansenNetflow.extensions.bazaar as any).schema = {
+      properties: { input: { properties: { body: { required: ["chains"], properties: { chains: { type: "array", description: "Chains to include" } } } } } },
+    };
     const { d, sellerCalls } = deps([
       item("https://api.nansen.ai/api/v1/smart-money/holdings", "Nansen", "Smart money holdings", "50000", { method: "POST", body: { chains: ["ethereum"] } }),
-      item("https://api.nansen.ai/api/v1/smart-money/netflow", "Nansen", "Get Smart Money Netflow Data", "50000", { method: "POST", body: netflowBody }),
+      nansenNetflow,
       item("https://liquidvision.app/api/v1/hl/smart-money/netflow", "LiquidVision.app", "Hyperliquid netflow", "30000"),
     ]);
-    const r: any = await buyData(params, { query: "nansen smart money netflow" }, ORIGIN, d);
-    expect(r.status).toBe("awaiting_approval");
-    expect(r.approve_url).toMatch(new RegExp(`^${ORIGIN}/approve/`));
-    // The input was not the user's: show_user starts with the conditions, and Claude is told to confirm them before signing.
-    expect(r.show_user.split("\n")[0]).toBe(
-      'Buying with these conditions (the API\'s example; you did not choose them): chains=["ethereum","solana"]',
-    );
-    expect(r.show_user).toMatch(/How to pay/);
-    expect(r.next_step).toMatch(/^The input came from the API's example.*ask whether they are what they want/);
+
+    // 1. No input in the request: nothing is prepared; Claude gets the field to fill.
+    const r: any = await buyData(params, { query: "Nansenのsmart moneyのnetflowが欲しい" }, ORIGIN, d);
+    expect(r).toMatchObject({ status: "confirm_input", paid: false });
+    expect(r.approve_url).toBeUndefined();
+    expect(r.chosen.resource).toBe("https://api.nansen.ai/api/v1/smart-money/netflow");
+    expect(r.needs).toEqual([{ field: "body.chains", description: "Chains to include", example: ["ethereum", "solana"] }]);
+    expect(r.next_step).toMatch(/Fill the input from the user's own words/);
+    expect(sellerCalls).toHaveLength(0);
+
+    // 2. The user gives the chains: paid with exactly that, no conditions line.
+    const own: any = await buyData(params, { query: "nansen smart money netflow", body: { chains: ["ethereum"] } }, ORIGIN, d);
+    expect(own.status).toBe("awaiting_approval");
+    expect(JSON.parse(String(sellerCalls.at(-1)!.init?.body))).toEqual({ chains: ["ethereum"] });
+    expect(own.show_user).toMatch(/^How to pay/);
+
+    // 3. The user accepts the example: only the required field is taken (not the narrowing filters), and shown first.
+    const ex: any = await buyData(params, { query: "nansen smart money netflow", use_example: true }, ORIGIN, d);
+    expect(ex.status).toBe("awaiting_approval");
+    expect(JSON.parse(String(sellerCalls.at(-1)!.init?.body))).toEqual({ chains: ["ethereum", "solana"] });
+    expect(ex.show_user.split("\n")[0]).toBe('Buying with these conditions (the API\'s example; you did not choose them): chains=["ethereum","solana"]');
+    expect(ex.next_step).toMatch(/^The input came from the API's example/);
     // The price and network are the ones the 402 asked for (the mock seller asks 0.01 on Base).
-    expect(r.chosen).toMatchObject({ resource: "https://api.nansen.ai/api/v1/smart-money/netflow", price_usd: "0.01", network: BASE });
-    expect(r.chosen.input_used).toMatchObject({ body: netflowBody, from_bazaar_example: ["body"] });
-    // The seller was asked with the example body.
-    expect(sellerCalls[0].url).toBe("https://api.nansen.ai/api/v1/smart-money/netflow");
-    expect(sellerCalls[0].init?.method).toBe("POST");
-    expect(JSON.parse(String(sellerCalls[0].init?.body))).toEqual(netflowBody);
+    expect(ex.chosen).toMatchObject({ resource: "https://api.nansen.ai/api/v1/smart-money/netflow", price_usd: "0.01", network: BASE });
+    expect(ex.chosen.input_used).toMatchObject({ from_bazaar_example: ["body.chains"] });
+  });
+
+  it("asks for a required query parameter instead of using the example's value", async () => {
+    const sec = item("https://sec.test/v1/filings", "SEC filings", "Latest SEC filings by ticker", "10000", { method: "GET", queryParams: { ticker: "AAPL" } });
+    (sec.extensions.bazaar as any).schema = { properties: { input: { properties: { queryParams: { required: ["ticker"], properties: { ticker: { description: "Stock ticker" } } } } } } };
+    const { d, sellerCalls } = deps([sec]);
+    const r: any = await buyData(params, { query: "SECの提出書類でMSFTの最新を" }, ORIGIN, d);
+    expect(r).toMatchObject({ status: "confirm_input", needs: [{ field: "query_params.ticker", description: "Stock ticker", example: "AAPL" }] });
+    expect(sellerCalls).toHaveLength(0);
+    const msft: any = await buyData(params, { query: "sec filings", query_params: { ticker: "MSFT" } }, ORIGIN, d);
+    expect(msft.status).toBe("awaiting_approval");
+    expect(sellerCalls.at(-1)!.url).toBe("https://sec.test/v1/filings?ticker=MSFT");
+  });
+
+  it("does not pay for a generic result when the request names something the endpoint only covers through optional input", async () => {
+    const sec = item("https://sec.test/api/v1/sec/filings", "SEC filings", "Latest SEC filings", "10000", { method: "GET" });
+    (sec.extensions.bazaar as any).schema = {
+      properties: { input: { properties: { queryParams: { properties: { query: { description: "Text that the title must contain, e.g. a ticker" } } } } } },
+    };
+    const { d, sellerCalls } = deps([sec]);
+    // "msft" is not in the endpoint: the request is about it, so the input has to carry it.
+    const r: any = await buyData(params, { query: "SECの提出書類でMSFTの最新を" }, ORIGIN, d);
+    expect(r).toMatchObject({ status: "confirm_input", needs: [], request_mentions: ["msft"] });
+    expect(r.optional).toEqual([{ field: "query_params.query", description: "Text that the title must contain, e.g. a ticker" }]);
+    expect(r.next_step).toMatch(/mentions msft/);
+    expect(sellerCalls).toHaveLength(0);
+    const ok: any = await buyData(params, { query: "SECの提出書類でMSFTの最新を", query_params: { query: "MSFT" } }, ORIGIN, d);
+    expect(ok.status).toBe("awaiting_approval");
+    expect(sellerCalls.at(-1)!.url).toBe("https://sec.test/api/v1/sec/filings?query=MSFT");
+  });
+
+  it("reads common Japanese words as English keywords", async () => {
+    const { queryTokens } = await import("../src/buy.js");
+    expect(queryTokens("BTCの価格をx402で買って")).toEqual(["btc", "price"]);
+    expect(queryTokens("SECの提出書類でMSFTの最新を")).toEqual(["sec", "msft", "filing", "filings"]);
+  });
+
+  it("skips a seller whose latest Seller Probe purchase was refused, even when it matches best", async () => {
+    const probe = async (url: string) => {
+      const host = new URL(url).hostname;
+      return host === "x402node.test" ? { status: "scored", host, verdict: "request_rejected" } : { status: "unscored", host };
+    };
+    const { d } = deps(
+      [
+        item("https://x402node.test/crypto/price/btc/usd", "BTC USD price", "BTC price", "2000"),
+        item("https://ok.test/price", "Crypto price", "Prices of coins", "2000"),
+      ],
+      probe,
+    );
+    const r: any = await buyData(params, { query: "btc price" }, ORIGIN, d);
+    expect(r.status).toBe("awaiting_approval");
+    expect(r.chosen.resource).toBe("https://ok.test/price");
   });
 
   it("uses the user's own body and query parameters over the example", async () => {

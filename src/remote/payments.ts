@@ -16,7 +16,7 @@ import {
 } from "@solana/kit";
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
 import { CHAINS, formatMicros, parseUsdToMicros } from "../chains.js";
-import { decide, describeCandidate, exampleConditions, findCandidates, rankByRecord, requestFor, type BuyDataArgs } from "../buy.js";
+import { decide, describeCandidate, exampleConditions, findCandidates, rankByRecord, requestFor, unmatchedWords, type BuyDataArgs } from "../buy.js";
 import { lookupProbe } from "../safe/probe.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf, type ChainResult, type PayerKey } from "../safe/chain.js";
@@ -305,6 +305,31 @@ export async function buyData(params: RemoteParams, args: BuyDataArgs, origin: s
     };
   }
   const choice = requestFor(pick, args);
+  // Input is never filled silently. Nothing is prepared while required input is missing, or while the request names
+  // something specific (e.g. "MSFT") that the endpoint does not cover and that no input carries yet.
+  const gaveInput = args.body !== undefined || args.query_params !== undefined;
+  const specific = gaveInput ? [] : unmatchedWords(args.query, pick.item);
+  if (choice.needs.length || (specific.length && choice.optional.length)) {
+    const fields = [...choice.needs, ...(choice.needs.length ? [] : choice.optional)];
+    return {
+      status: "confirm_input",
+      paid: false,
+      query: args.query,
+      chosen: { ...describeCandidate(pick), url: choice.url },
+      needs: choice.needs,
+      optional: choice.optional,
+      request_mentions: specific.length ? specific : undefined,
+      other_candidates: candidates.slice(1, 3).map(describeCandidate),
+      next_step:
+        "Nothing was prepared. " +
+        (choice.needs.length
+          ? `This API needs input the user's request did not give: ${choice.needs.map((n) => n.field).join(", ")}. `
+          : `The request mentions ${specific.join(", ")}, which this API only covers through its input (${fields.map((n) => n.field).join(", ")}). `) +
+        "Fill the input from the user's own words (for example the ticker, token, address or chain they named) and call buy_data again with " +
+        "body / query_params (an empty query_params: {} means no optional input); if their request does not say, ask them. The example " +
+        "values are only the API's sample: call buy_data with use_example: true only if the user agrees to them.",
+    };
+  }
   const r: Record<string, any> = await requestPayment(params, { url: choice.url, method: choice.method, body: choice.body as any }, origin, deps);
   // Input the user did not give came from the API's example: the user sees those conditions before signing.
   const conditions = r.status === "awaiting_approval" ? exampleConditions(choice) : null;
