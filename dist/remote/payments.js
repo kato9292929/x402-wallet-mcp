@@ -9,6 +9,7 @@ import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
 import { activeFeePayerRefusals, activeRefusals, FEE_PAYER_REFUSAL_TTL_MS, NET_REFUSAL_TTL_MS, } from "../safe/netfail.js";
 import { offerChangedDetail } from "../x402/explain.js";
+import { RESULT_KEPT_MINUTES, RESULT_NEXT_STEP, SHOW_USER_INSTRUCTION, showUserForApproval } from "../notice.js";
 import { describeRequirement } from "../x402/parse.js";
 import { PaymentError, X402Requester } from "../x402/request.js";
 import { configFor } from "./params.js";
@@ -22,7 +23,7 @@ import { AddressWallet } from "./wallet.js";
  */
 export const PENDING_TTL_S = 300;
 const BUILD_TTL_S = 120;
-const RESULT_TTL_S = 1800;
+const RESULT_TTL_S = RESULT_KEPT_MINUTES * 60;
 const LOCK_TTL_S = 900;
 const DAY_S = 24 * 3600;
 /**
@@ -179,7 +180,8 @@ export async function requestPayment(params, input, origin, deps) {
         probe: prep.probeOut,
         price_check: prep.priceCheck,
         warnings: prep.warnings.length ? prep.warnings : undefined,
-        next_step: `Nothing has been paid yet. Tell the user this is paid on ${CHAINS[sel.network]?.name} and signed in ${signWith}. ` +
+        show_user: showUserForApproval(solana ? "solana" : "evm"),
+        next_step: `${SHOW_USER_INSTRUCTION} Nothing has been paid yet. Tell the user this is paid on ${CHAINS[sel.network]?.name} and signed in ${signWith}. ` +
             (solana
                 ? "Show the user approve_url as a link (and phantom_app_url for approving on a phone in the Phantom app). "
                 : "Show the user approve_url as a link to open in a browser with Rabby or MetaMask. ") +
@@ -192,8 +194,10 @@ export async function getResult(id, deps) {
     if (!/^[0-9a-f]{32}$/.test(id))
         return { request_id: id, status: "unknown", message: "No such request." };
     const r = await deps.store.get(K.result(id));
-    if (r)
-        return { request_id: id, ...r };
+    if (r) {
+        const done = r.status === "fulfilled" || r.status === "recovered_by_retry";
+        return { request_id: id, ...r, ...(done ? { next_step: RESULT_NEXT_STEP } : {}) };
+    }
     const unresolved = await resolveSent(id, deps);
     if (unresolved)
         return { request_id: id, ...unresolved };

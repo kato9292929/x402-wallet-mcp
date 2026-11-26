@@ -111,6 +111,8 @@ describe("remote: choosing the chain (any connection URL pays on Solana and Base
     const accepts = [exactReq("5000", BASE_SEPOLIA), solReq("5000")]; // Base listed first, like Agent402
     const pick = async (q: string) => (await requestPayment(url(q), { url: URL_ }, ORIGIN, setup({ accepts }).deps)).payment;
     expect(await pick(`solana=${sol}&`)).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
+    const solLink = await requestPayment(url(`solana=${sol}&`), { url: URL_ }, ORIGIN, setup({ accepts }).deps);
+    expect(solLink.show_user).toMatch(/Phantom app link/); // Solana: the phone line
     expect(await pick(`base=${owner.address}&`)).toMatchObject({ network: BASE_SEPOLIA, sign_with: "Rabby / MetaMask" });
     expect(await pick("")).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
     // A cheaper chain still wins over the preferred one.
@@ -151,6 +153,13 @@ describe("remote: approval flow (Base)", () => {
     expect(r.approve_url).toMatch(new RegExp(`^${ORIGIN}/approve/[0-9a-f]{32}\\?t=[0-9a-f]{32}$`));
     expect(r.phantom_app_url).toBeUndefined(); // Base: signed in Rabby / MetaMask, not Phantom
     expect(r.payment.sign_with).toBe("Rabby / MetaMask");
+    // Text for the user with the link: how to pay, 30 minutes, the notice and the terms; Base has no phone line.
+    expect(r.show_user).toMatch(/^How to pay\n/);
+    expect(r.show_user).toMatch(/kept for 30 minutes/);
+    expect(r.show_user).toMatch(/not a party to the transaction/);
+    expect(r.show_user).toContain("Terms: https://agentpay.x402jp.com/terms");
+    expect(r.show_user).not.toMatch(/Phantom app link/);
+    expect(r.next_step).toMatch(/^Show the user show_user together with the approval link/);
     expect((await getResult(r.request_id, deps)).status).toBe("awaiting_approval");
     expect(sellerCalls).toHaveLength(1); // the unpaid 402 only
 
@@ -170,6 +179,7 @@ describe("remote: approval flow (Base)", () => {
 
     const res = await getResult(r.request_id, deps);
     expect(res).toMatchObject({ status: "fulfilled", paid: true, body: JSON.stringify({ ok: true }) });
+    expect(res.next_step).toMatch(/content of body.*30 minutes/);
 
     // The same request id is never paid again.
     await expect(signAndPay(r.request_id, t, "0x00", deps)).rejects.toThrow(/already been handled/);
