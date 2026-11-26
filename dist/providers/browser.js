@@ -391,9 +391,10 @@ max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btns{display:flex;gap:10px;margin-top:20px}
 button{flex:1;font:inherit;font-size:16px;font-weight:500;padding:13px;border-radius:10px;cursor:pointer;transition:background .2s,opacity .2s,border-color .2s}
 #reject{background:transparent;color:var(--ink);border:1px solid var(--line)}#reject:hover{border-color:rgba(255,255,255,.3)}
-#approve{color:#151517;border:0;font-weight:600;letter-spacing:.01em;
-background-image:linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff);transition:filter .2s,opacity .2s}
-#approve:hover{filter:brightness(1.08)}
+#approve{font-weight:600;letter-spacing:.01em;border:1.5px solid transparent;
+background:linear-gradient(#1b1b1e,#1b1b1e) padding-box,linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff) border-box}
+#approve span{background:linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+#approve:hover{background:linear-gradient(#232327,#232327) padding-box,linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff) border-box}
 button:disabled{opacity:.4;cursor:default}
 #msg{min-height:20px;margin:14px 0 0;text-align:center;font-size:14px;line-height:1.6;color:var(--muted)}
 #msg.ok{color:var(--ok)}#msg.err{color:var(--err)}
@@ -440,7 +441,7 @@ ${APPROVAL_CSS}</style></head><body>
 </dl>
 <p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>
 <p id="devnet" class="warn" hidden>Phantom の設定で「テストネット」を有効にしておくと、内容の確認が正しく出ます。</p>
-<div class="btns"><button id="reject">拒否</button><button id="approve">承認する</button></div>
+<div class="btns"><button id="reject">拒否</button><button id="approve"><span>承認する</span></button></div>
 <p id="msg"></p>
 </main>
 ${d.family === "solana" ? '<script src="/solana-web3.js"></script>' : ""}

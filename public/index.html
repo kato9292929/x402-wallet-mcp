@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>x402 AgentPay via MCP</title>
-<meta name="description" content="agentpay lets Claude pay for x402 APIs from your own wallet. Every payment is checked first and signed by you in Phantom.">
+<meta name="description" content="Agentic commerce with x402: AgentPay lets Claude pay for APIs per call in USDC on Solana and Base, checked first and signed by you in your own wallet.">
 <meta name="theme-color" content="#151517">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -94,7 +94,25 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
 .tools dd{font-size:15px;color:var(--muted)}
 .note{text-align:center;padding-bottom:0}
 .note .h2{margin:0 auto 12px}
-.note p{color:var(--muted);font-size:16px}
+.note p{color:var(--muted);font-size:16px;max-width:640px;margin:0 auto;line-height:1.7}
+.note .kicker{margin-bottom:14px}
+.lede{color:var(--muted);font-size:16px;line-height:1.6;max-width:760px;margin:-18px 0 28px}
+.paid-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--line);border-radius:16px;overflow:hidden;
+background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
+.paid-col+.paid-col{border-left:1px solid var(--line)}
+.paid-col ul{list-style:none}
+.paid-head{display:flex;justify-content:space-between;gap:12px;padding:14px 22px;border-bottom:1px solid var(--line);font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.paid-head span:first-child{color:var(--ink)}
+.api{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 22px}
+.api+.api{border-top:1px solid var(--line)}
+.api-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.api-name{font-size:18px;font-weight:500;letter-spacing:-.01em}
+.api-sub{font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.api-ep{align-self:flex-start;margin-top:4px;font-size:12.5px;color:var(--dim);background:none;padding:0}
+.api-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none}
+.paid{font-size:13px;font-weight:500;color:#6ee7a8;border:1px solid rgba(110,231,168,.35);background:rgba(110,231,168,.08);border-radius:999px;padding:3px 12px;white-space:nowrap}
+.paid:hover{background:rgba(110,231,168,.16)}
+.api-price{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
 .foot{max-width:1120px;margin:clamp(72px,10vw,128px) auto 0;padding:24px 0 40px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;font-size:14px;color:var(--dim)}
 .foot nav{display:flex;gap:20px}
 .foot a{color:var(--muted)} .foot a:hover{color:var(--ink)}
@@ -105,7 +123,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
   .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:640px){
-  .steps,.grid,.tools{grid-template-columns:minmax(0,1fr)}
+  .steps,.grid,.tools,.paid-grid{grid-template-columns:minmax(0,1fr)}
+  .paid-col+.paid-col{border-left:0;border-top:1px solid var(--line)}
+  .api{padding:16px}
   .steps .card:first-child{display:block}
   .install{margin-top:18px}
   .foot{flex-direction:column}
@@ -143,6 +163,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
       <a class="brand-name" href="/">AgentPay</a>
       <nav class="links" aria-label="Main">
         <a href="#how">How to Pay</a>
+        <a href="#paid">Paid APIs</a>
         <a href="https://github.com/kato9292929/x402-wallet-mcp#readme">Docs</a>
         <a href="https://probe.x402jp.com">Seller Probe</a>
       </nav>
@@ -166,7 +187,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
 <main class="more">
   <section class="block" id="how" aria-labelledby="how-title">
     <p class="kicker reveal">How to Pay</p>
-    <h2 class="h2 reveal" id="how-title">Four steps. You approve every payment.</h2>
+    <h2 class="h2 reveal" id="how-title">Four steps. Claude buys, you sign.</h2>
     <ol class="steps">
       <li class="card reveal">
         <span class="num">01</span>
@@ -193,12 +214,12 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
       <li class="card reveal">
         <span class="num">02</span>
         <h3>Ask Claude to buy</h3>
-        <p>Paste the paid API’s URL and say “buy this”. AgentPay runs every check first. If one fails, nothing is prepared.</p>
+        <p>Paste a paid API’s URL and say “buy this”, or let Claude find one. AgentPay checks the seller, the price, your limits and whether the payment can go through. If a check fails, Claude tells you why and nothing is prepared.</p>
       </li>
       <li class="card reveal">
         <span class="num">03</span>
         <h3>Open the link and sign</h3>
-        <p>Claude shows an approval link with the price, the payee and the API. It also says which wallet to use: Phantom for Solana, Rabby / MetaMask for Base. On a phone, open it in the Phantom app.</p>
+        <p>Claude shows an approval link with the price, the payee, the API and the network. Sign in Phantom on Solana, or Rabby / MetaMask on Base. On a phone, open it in the Phantom app.</p>
       </li>
       <li class="card reveal">
         <span class="num">04</span>
@@ -206,6 +227,101 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
         <p>Claude fetches the result: the API response, the transaction found on chain and the delivery check. A link that isn’t approved expires in 5 minutes.</p>
       </li>
     </ol>
+  </section>
+
+  <section class="block" id="paid" aria-labelledby="paid-title">
+    <p class="kicker reveal">Paid through AgentPay</p>
+    <h2 class="h2 reveal" id="paid-title">APIs Claude has already paid for.</h2>
+    <p class="lede reveal">Real x402 purchases made from Claude with an approval link, signed in a browser wallet and confirmed on chain (Nov 2026). Each “Paid” opens the transaction.</p>
+    <div class="paid-grid reveal">
+      <div class="paid-col">
+        <p class="paid-head"><span>Base</span><span>Rabby / MetaMask</span></p>
+        <ul>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">Agent Data</span>
+              <span class="api-sub">agent-data-api.agentdata.workers.dev · Contract opportunities</span>
+              <code class="api-ep">GET /v1/contracts/opportunities</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://basescan.org/tx/0xe9baa1000060c93d79ebacc35a3db894f52e2671ba93e78222e846652042372f" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.01</span>
+            </div>
+          </li>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">NZ Data</span>
+              <span class="api-sub">nzdata.zakwins.workers.dev · New Zealand working days</span>
+              <code class="api-ep">GET /nz/working-days</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://basescan.org/tx/0xd51cc1a2c54250718530493ee4875316b7725f4b3bbcb5ddab82a6beb05b64c6" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.002</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <div class="paid-col">
+        <p class="paid-head"><span>Solana</span><span>Phantom</span></p>
+        <ul>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">Nansen</span>
+              <span class="api-sub">api.nansen.ai · On-chain analytics</span>
+              <code class="api-ep">POST /api/v1/tgm/holders</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://solscan.io/tx/5J7VaDxG25LesWaDo5WbKCdwVB8pdi5FasSvvMa5TjXBz696sVgMDCUgbwaob3ZYVxbxVPq7fHXydtvguXYvRmkg" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.05</span>
+            </div>
+          </li>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">citable.run</span>
+              <span class="api-sub">citable.run · Search results</span>
+              <code class="api-ep">GET /v1/serp</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://solscan.io/tx/3auH8ZzywTQFpgNNq3B4VCadKAC9yYHSAh3KHPNfMVsnZogzCMzLR4VAA67NqL6KM2eShSp6HLVJLCERmqS6ntgF" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.008</span>
+            </div>
+          </li>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">losbeto</span>
+              <span class="api-sub">api.losbeto.xyz · SEC filings</span>
+              <code class="api-ep">GET /sec-filing</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://solscan.io/tx/3GAKNzJcLKQNbzxu79jfC32euYJnmABTkay9fkRLcfCBcVKzTY8Bkgx3nyCagMFsk26Qet83xi8rRhiCFrDxm2kQ" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.05</span>
+            </div>
+          </li>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">Tanod</span>
+              <span class="api-sub">tanod.dev · Token price and liquidity</span>
+              <code class="api-ep">POST /v1/solana/token-price</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://solscan.io/tx/2Jbn6jBqwAGjywmoQYMfR9Z7HfaSmS6rPSbQcR7RngNtPxkKhZhzqB78qLEHfYRvkK1JubdFut2VFaUUZYbDWtMF" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.005</span>
+            </div>
+          </li>
+          <li class="api">
+            <div class="api-main">
+              <span class="api-name">Xynaptic</span>
+              <span class="api-sub">api.xynaptic.io · Crypto prices</span>
+              <code class="api-ep">GET /v1/crypto-price</code>
+            </div>
+            <div class="api-side">
+              <a class="paid" href="https://solscan.io/tx/4PAEhUrao79BjC5n6Y7riKkqoXudxVRjX1jF16bnpdX2erAv1SJuXZYWMh2b8d53nCZz51nuqx3bAzNDVvUMUyaJ" rel="noopener" target="_blank">Paid ↗</a>
+              <span class="api-price">$0.01</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
   </section>
 
   <section class="block" aria-labelledby="checks-title">
@@ -225,6 +341,14 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
         <p>At most $0.10 per payment and $1.00 per wallet per 24 hours. You can lower them in your connector URL. Claude can’t change them.</p>
       </article>
       <article class="feat reveal">
+        <h3>Payment setup</h3>
+        <p>Skips a seller whose payment service rejects wallet-signed payments, or whose address can’t receive USDC, and pays on its other network when it can.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Your wallet</h3>
+        <p>Stops before you sign if your wallet is set up as a smart account (an EIP-7702 delegation) that this kind of payment can’t use, and says how to fix it.</p>
+      </article>
+      <article class="feat reveal">
         <h3>Built when you sign</h3>
         <p>The payment is checked again and built only after you press sign, so it never goes stale. The amount you sign must match the amount you saw.</p>
       </article>
@@ -235,6 +359,10 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
       <article class="feat reveal">
         <h3>Recovers non-delivery</h3>
         <p>If a seller takes the payment but doesn’t deliver, and it publishes Delivery Receipt keys, AgentPay fetches the response again with the same payment.</p>
+      </article>
+      <article class="feat reveal">
+        <h3>Explains every stop</h3>
+        <p>When AgentPay stops or a seller refuses, Claude gets what happened, whose side the problem is on and what to do next, and nothing is paid.</p>
       </article>
     </div>
   </section>
@@ -255,8 +383,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
   </section>
 
   <section class="block note reveal" aria-label="Keys">
-    <h2 class="h2">Your keys stay in your wallet.</h2>
-    <p>AgentPay holds no keys. Nothing is paid unless you sign it in your own wallet.</p>
+    <p class="kicker">x402 × AI agents</p>
+    <h2 class="h2">Agentic commerce, with you in the loop.</h2>
+    <p>x402 turns HTTP 402 into a payment: an API names its price and an AI agent pays per call in USDC. AgentPay lets Claude do that from your own wallet. It holds no keys, and nothing is paid unless you sign.</p>
   </section>
 
   <footer class="foot">

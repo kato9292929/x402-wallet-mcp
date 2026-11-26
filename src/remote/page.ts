@@ -59,7 +59,7 @@ ${APPROVAL_FONTS}
 <div class="r"><dt>API</dt><dd id="url"></dd></div>
 </dl>
 <p id="testnet" class="warn" hidden>Testnet: no real money moves.</p>
-<div class="btns"><button id="reject">Reject</button><button id="approve">Sign</button></div>
+<div class="btns"><button id="reject">Reject</button><button id="approve"><span>Sign</span></button></div>
 <p id="msg"></p>
 <a id="applink" class="applink" hidden>On a phone: open in the Phantom app</a>
 </main>
