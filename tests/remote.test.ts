@@ -53,6 +53,7 @@ function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Resp
       findPayment: async () => ({ settlement: "verified", tx: TX, transferred: 5000n, headerTxMatched: true, ...opts.chain }),
       sellerTimeoutMs: 50,
       checkPayTo: async () => ({ exists: true }),
+      walletCode: async () => "0x",
     },
   };
   const params = parseParams(new URL(`${ORIGIN}/api/mcp?base=${owner.address}&network=testnet`));
@@ -214,6 +215,19 @@ describe("remote: approval flow (Base)", () => {
     await signAndPay(r.request_id, t, await signTyped(owner, built.typedData as string), deps);
     const second = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     expect(second).toMatchObject({ status: "blocked", blocked_reason: "over_cap" });
+  });
+
+  it("stops before signing when the connected EVM wallet has an EIP-7702 delegation", async () => {
+    const { deps } = setup();
+    const delegate = "69007702764179f14f51cdce752f4f775d74e139";
+    deps.requesterOverrides!.walletCode = async () => "0xef0100" + delegate;
+    const params = parseParams(new URL(`${ORIGIN}/mcp?network=testnet`));
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    expect(r.status).toBe("awaiting_approval"); // the wallet is not known yet
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps, owner.address)).rejects.toThrow(/払う前の確認で止まりました/);
+    const res: any = await getResult(r.request_id, deps);
+    expect(res).toMatchObject({ status: "blocked", blocked_reason: "wallet_delegated", delegate: "0x" + delegate, paid: false });
+    expect(res.detail).toMatch(/remove the EIP-7702 delegation/);
   });
 
   it("says which of the seller's terms changed before signing", async () => {

@@ -493,6 +493,22 @@ describe("facilitators that refuse browser-wallet (Phantom) transactions, and pa
     expect(r.detail).toMatch(/seller's setup/);
     expect(missing.createExactPayment).not.toHaveBeenCalled();
 
+    // The seller also takes Base: that is paid instead.
+    const fallback = setup({
+      seller: [res402([solReq(web3.Keypair.generate().publicKey.toBase58()), exactReq("1000", BASE_SEPOLIA)])],
+      deps: { checkPayTo: async () => ({ exists: false, ata: "Ata111" }) },
+    });
+    const fb: any = await fallback.requester.prepare({ url: URL_ });
+    expect(fb.kind).toBe("ready");
+    expect(fb.selected.network).toBe(BASE_SEPOLIA);
+    expect(fb.warnings.join(" ")).toMatch(/cannot receive the token.*paid on/);
+    const fc: any = await setup({
+      seller: [res402([solReq(web3.Keypair.generate().publicKey.toBase58()), exactReq("1000", BASE_SEPOLIA)])],
+      deps: { checkPayTo: async () => ({ exists: false, ata: "Ata111" }) },
+    }).requester.checkSeller({ url: URL_ });
+    expect(fc).toMatchObject({ would_block: null, payto_account_skipped: { network: SOLANA_DEVNET, exists: false } });
+    expect(fc.would_pay.network).toBe(BASE_SEPOLIA);
+
     const unknown = setup({
       seller: [res402([solReq(web3.Keypair.generate().publicKey.toBase58())])],
       deps: { checkPayTo: async () => ({ exists: null, error: "all RPCs failed" }) },
@@ -534,5 +550,27 @@ describe("refusal details", async () => {
     const bh = refusalDetail({ reason: "invalid_exact_svm_transaction_simulation_failed: BlockhashNotFound", httpStatus: 402, settlement: "not_checked", network: SOLANA_DEVNET });
     expect(bh).toMatch(/new approval link/);
     expect(refusalDetail({ reason: "", httpStatus: 402, settlement: "not_checked", network: BASE_SEPOLIA })).toMatch(/without giving a reason/);
+  });
+});
+
+describe("EVM wallets with an EIP-7702 delegation", () => {
+  const browser: WalletProvider = { ...provider, id: "browser" };
+  const delegate = "69007702764179f14f51cdce752f4f775d74e139";
+  it("a browser wallet with a delegation is stopped before signing, with a detail", async () => {
+    const { requester, createExactPayment } = setup({ seller: [res402([exactReq("1000")])], deps: { provider: browser, walletCode: async () => "0xef0100" + delegate } });
+    const r = await requester.request({ url: URL_ });
+    expect(r).toMatchObject({ status: "blocked", blocked_reason: "wallet_delegated", delegate: "0x" + delegate, paid: false });
+    expect(r.detail).toMatch(/Problem side: the wallet's setting/);
+    expect(createExactPayment).not.toHaveBeenCalled();
+  });
+  it("no code pays; unreadable code warns; signers that are not browser wallets are not checked", async () => {
+    const plain = setup({ seller: [res402([exactReq("1000")])], deps: { provider: browser, walletCode: async () => "0x" } });
+    expect(((await plain.requester.prepare({ url: URL_ })) as any).kind).toBe("ready");
+    const unknown = setup({ seller: [res402([exactReq("1000")])], deps: { provider: browser, walletCode: async () => null } });
+    expect(((await unknown.requester.prepare({ url: URL_ })) as any).warnings.join(" ")).toMatch(/Could not confirm the paying wallet/);
+    const walletCode = vi.fn(async () => "0xef0100" + delegate);
+    const cdp = setup({ seller: [res402([exactReq("1000")])], deps: { walletCode } });
+    expect(((await cdp.requester.prepare({ url: URL_ })) as any).kind).toBe("ready");
+    expect(walletCode).not.toHaveBeenCalled();
   });
 });

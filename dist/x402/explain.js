@@ -53,3 +53,10 @@ export function refusalDetail(o) {
     return (`The seller or its facilitator refused the payment${r ? ` (${r})` : " without giving a reason"}. Problem side: the seller or its facilitator. ${nothingPaid} ` +
         "Next: try again with a new approval link; if it repeats, this seller's payment setup does not accept this payment.");
 }
+export function walletDelegatedDetail(o) {
+    return (`The paying wallet ${o.payer} has an EIP-7702 delegation to ${o.delegate} on ${o.network}, which makes it a smart account. ` +
+        "A smart account's signature is checked by its own contract (isValidSignature), and this one refuses the wallet's plain signature for a " +
+        "USDC transfer authorization (EIP-3009), so the facilitator and the USDC contract would reject the payment. " +
+        "Problem side: the wallet's setting. Nothing was paid. " +
+        "Next: remove the EIP-7702 delegation in the wallet (Rabby lists and revokes it with token approvals), then try again; or pay from an account without a delegation.");
+}

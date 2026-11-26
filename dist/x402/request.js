@@ -10,7 +10,8 @@ import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js"
 import { checkInput } from "../safe/input.js";
 import { WALLET_INCOMPATIBLE_FEE_PAYERS, activeFeePayerRefusals, activeRefusals, feePayerRefusalsPath, netFailuresPath, readFeePayerRefusals, readNetFailures, recordFeePayerRefusal, recordNetFailure, refusesWalletInstructions, } from "../safe/netfail.js";
 import { checkPayToAccount } from "../safe/payto.js";
-import { facilitatorIncompatibleDetail, networkAvoidedDetail, payToAccountMissingDetail, refusalDetail } from "./explain.js";
+import { rpcCall } from "../safe/rpc.js";
+import { facilitatorIncompatibleDetail, networkAvoidedDetail, payToAccountMissingDetail, refusalDetail, walletDelegatedDetail, } from "./explain.js";
 import { lookupProbe, probeHost, probeSummary, reportToProbe } from "../safe/probe.js";
 import { RECEIPT_HEADER, WELL_KNOWN_PATH, parseWellKnown, refetch, verifyReceipt, } from "../safe/receipt-verify.js";
 import { describeRequirement, isMppChallenge, parsePaymentRequired, parseSettleResponse, } from "./parse.js";
@@ -159,6 +160,58 @@ export class X402Requester {
             return null;
         return (this.deps.checkPayTo ?? ((n, p, m) => checkPayToAccount(n, p, m)))(r.network, r.payTo, r.asset);
     }
+    /**
+     * Picks the option to pay like selectRequirement, but skips a Solana option whose payTo cannot receive
+     * the token: another option the seller offers (such as Base) is chosen instead. `skipped` is the first
+     * option skipped that way, with its account check.
+     */
+    async choose(accepts, ctx) {
+        const evaluated = evaluate(accepts, ctx);
+        const excluded = new Set();
+        let skipped;
+        for (;;) {
+            const selected = selectRequirement(accepts.filter((a) => !excluded.has(a)), ctx);
+            if (!selected)
+                return { selected: undefined, evaluated, account: null, skipped };
+            const account = await this.payToAccount(selected);
+            if (account?.exists !== false)
+                return { selected, evaluated, account, skipped };
+            skipped ??= { requirement: selected, account };
+            excluded.add(selected);
+        }
+    }
+    /**
+     * An EVM wallet with an EIP-7702 delegation (code 0xef0100 + delegate) has every EIP-3009 signature checked
+     * through the delegate's isValidSignature, which refuses the wallet's plain signature: USDC and the
+     * facilitators then reject the payment. Returns the delegate when the wallet that will sign is delegated.
+     */
+    async delegationOf(selected) {
+        if (this.deps.provider?.id !== "browser" || chainInfo(selected.network)?.family !== "evm")
+            return null;
+        let payer;
+        try {
+            payer = await this.deps.provider.address(selected.network);
+        }
+        catch {
+            return null; // chosen on the approval page; checked again there
+        }
+        const read = this.deps.walletCode ?? (async (network, address) => {
+            try {
+                return (await rpcCall(network, "eth_getCode", [address, "latest"], { attempts: 1, timeoutMs: 8000 })).result;
+            }
+            catch {
+                return null;
+            }
+        });
+        const code = await read(selected.network, payer);
+        if (code === null)
+            return { payer, unknown: "could not read the wallet's code (RPC unavailable)" };
+        if (/^0xef0100[0-9a-f]{40}$/i.test(code))
+            return { payer, delegate: "0x" + code.slice(8) };
+        if (code !== "0x" && code !== "")
+            return { payer, unknown: "the wallet has contract code; whether it can sign this payment is not known" };
+        return null;
+    }
     /** Fetches the URL without paying and returns the parsed 402 (if any). */
     async probe(input) {
         const res = await this.fetchImpl(input.url, buildInit(input));
@@ -299,20 +352,27 @@ export class X402Requester {
         const input_check = checkInput(pr.raw, input);
         const avoidFeePayers = await this.feePayersToAvoid(input);
         const ctx = this.selectionContext(cfg, refusals.map((r) => r.network), avoidFeePayers);
-        const evaluated = evaluate(pr.accepts, ctx);
-        const selected = selectRequirement(pr.accepts, ctx);
-        // The same checks request_x402_payment makes before a link: facilitator compatibility and payTo's receiving account.
+        // The same checks request_x402_payment makes before a link: facilitator compatibility, payTo's receiving
+        // account (a Solana option that cannot receive is skipped for another one) and the paying wallet's delegation.
+        const { selected, evaluated, account: payto_account, skipped } = await this.choose(pr.accepts, ctx);
         const byFacilitator = evaluated.filter((c) => c.avoidedBy === "facilitator");
-        const payto_account = selected ? await this.payToAccount(selected) : null;
         let would_block = null;
-        if (!selected && byFacilitator.length) {
+        if (!selected && skipped) {
+            const s = skipped.requirement;
+            would_block = {
+                blocked_reason: "payto_account_missing",
+                detail: payToAccountMissingDetail({ payTo: s.payTo, ata: skipped.account.ata, asset: s.asset, network: s.network }),
+            };
+        }
+        else if (!selected && byFacilitator.length) {
             const avoided = byFacilitator.map((c) => ({ feePayer: c.feePayer, network: c.requirement.network, why: avoidFeePayers[c.feePayer] }));
             would_block = { blocked_reason: "facilitator_incompatible", facilitators: avoided, detail: facilitatorIncompatibleDetail(avoided) };
         }
-        else if (selected && payto_account?.exists === false) {
+        const delegation = selected ? await this.delegationOf(selected) : null;
+        if (!would_block && delegation?.delegate) {
             would_block = {
-                blocked_reason: "payto_account_missing",
-                detail: payToAccountMissingDetail({ payTo: selected.payTo, ata: payto_account.ata, asset: selected.asset, network: selected.network }),
+                blocked_reason: "wallet_delegated",
+                detail: walletDelegatedDetail({ payer: delegation.payer, delegate: delegation.delegate, network: selected.network }),
             };
         }
         const prices = await Promise.all(pr.accepts.filter((a) => a.scheme === "exact").map(async (a) => ({
@@ -341,6 +401,7 @@ export class X402Requester {
             would_pay: selected ? describeRequirement(selected) : null,
             facilitators_avoided: byFacilitator.map((c) => ({ network: c.requirement.network, feePayer: c.feePayer, reason: c.reason })),
             payto_account,
+            payto_account_skipped: skipped ? { network: skipped.requirement.network, payTo: skipped.requirement.payTo, ...skipped.account } : null,
             would_block,
             within_limits,
             limit_reason,
@@ -471,10 +532,17 @@ export class X402Requester {
         const refusals = await this.refusalsFor(host, probe);
         const avoidFeePayers = await this.feePayersToAvoid(input);
         const ctx = this.selectionContext(cfg, refusals.map((r) => r.network), avoidFeePayers);
-        const evaluated = evaluate(pr.accepts, ctx);
-        const selected = selectRequirement(pr.accepts, ctx);
+        const { selected, evaluated, account, skipped } = await this.choose(pr.accepts, ctx);
         if (!selected) {
             const byFacilitator = evaluated.filter((c) => c.avoidedBy === "facilitator");
+            if (skipped) {
+                const s = skipped.requirement;
+                return done(this.blocked(input, "payto_account_missing", `The seller's address ${s.payTo} has no account to receive this token on ${s.network}. Payment was not made.`, {
+                    payto_account: skipped.account,
+                    detail: payToAccountMissingDetail({ payTo: s.payTo, ata: skipped.account.ata, asset: s.asset, network: s.network }),
+                    probe: probeOut,
+                }));
+            }
             if (byFacilitator.length) {
                 const avoided = byFacilitator.map((c) => ({ feePayer: c.feePayer, network: c.requirement.network, why: avoidFeePayers[c.feePayer] }));
                 return done(this.blocked(input, "facilitator_incompatible", "Every option this seller offers settles through a facilitator that refuses transactions signed in Phantom. Payment was not made.", {
@@ -516,17 +584,23 @@ export class X402Requester {
                 }
             }
         }
-        // Solana: the seller's receiving token account must exist, or the transfer fails.
-        const account = await this.payToAccount(selected);
-        if (account?.exists === false) {
-            return done(this.blocked(input, "payto_account_missing", `The seller's address ${selected.payTo} has no account to receive this token on ${selected.network}. Payment was not made.`, {
-                payto_account: account,
-                detail: payToAccountMissingDetail({ payTo: selected.payTo, ata: account.ata, asset: selected.asset, network: selected.network }),
-                probe: probeOut,
-            }));
+        // Solana: the seller's receiving token account must exist, or the transfer fails (choose() skipped such options).
+        if (skipped) {
+            warnings.push(`The seller's ${skipped.requirement.network} address cannot receive the token (no receiving account), so this is paid on ${selected.network} instead.`);
         }
         if (account?.exists === null)
             warnings.push(`Could not confirm that the seller's address has an account to receive the token (${account.error ?? "RPC unavailable"}).`);
+        // EVM: a wallet with an EIP-7702 delegation cannot sign this payment.
+        const delegation = await this.delegationOf(selected);
+        if (delegation?.delegate) {
+            return done(this.blocked(input, "wallet_delegated", `The paying wallet ${delegation.payer} has an EIP-7702 delegation, so its signature for this payment would be rejected. Payment was not made.`, {
+                delegate: delegation.delegate,
+                detail: walletDelegatedDetail({ payer: delegation.payer, delegate: delegation.delegate, network: selected.network }),
+                probe: probeOut,
+            }));
+        }
+        if (delegation?.unknown)
+            warnings.push(`Could not confirm the paying wallet can sign this payment: ${delegation.unknown}.`);
         return { kind: "ready", input, cfg, host, rawPaymentRequired: pr.raw, selected, probeOut, warnings, priceCheck };
     }
     /** Steps 7-10 for a signed exact-scheme payment: send it, then let the chain decide whether money moved. */
