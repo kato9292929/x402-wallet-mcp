@@ -59,7 +59,10 @@ describe("MCP instructions", () => {
     const json = JSON.parse(text.includes("data:") ? text.split("\n").find((l) => l.startsWith("data:"))!.slice(5) : text);
     expect(json.result.instructions).toBe(REMOTE_INSTRUCTIONS);
     expect(json.result.instructions).toMatch(/buy_data/);
-    expect(json.result.instructions).toMatch(/Do not search the web or other connectors first/);
+    // When to use it only: never tells Claude to avoid or bypass other tools or connectors (directory policy 2.C / 2.E).
+    expect(json.result.instructions).toMatch(/has no account or API key for it/);
+    expect(json.result.instructions).toMatch(/already has a connector for that provider, follow the user's choice/);
+    expect(json.result.instructions).not.toMatch(/do not search|other connectors first|instead of|avoid/i);
   });
 });
 
@@ -74,7 +77,12 @@ describe("buy_data", () => {
     const r: any = await buyData(params, { query: "nansen smart money netflow" }, ORIGIN, d);
     expect(r.status).toBe("awaiting_approval");
     expect(r.approve_url).toMatch(new RegExp(`^${ORIGIN}/approve/`));
-    expect(r.show_user).toMatch(/^How to pay/);
+    // The input was not the user's: show_user starts with the conditions, and Claude is told to confirm them before signing.
+    expect(r.show_user.split("\n")[0]).toBe(
+      'Buying with these conditions (the API\'s example; you did not choose them): chains=["ethereum","solana"]',
+    );
+    expect(r.show_user).toMatch(/How to pay/);
+    expect(r.next_step).toMatch(/^The input came from the API's example.*ask whether they are what they want/);
     // The price and network are the ones the 402 asked for (the mock seller asks 0.01 on Base).
     expect(r.chosen).toMatchObject({ resource: "https://api.nansen.ai/api/v1/smart-money/netflow", price_usd: "0.01", network: BASE });
     expect(r.chosen.input_used).toMatchObject({ body: netflowBody, from_bazaar_example: ["body"] });
@@ -90,6 +98,9 @@ describe("buy_data", () => {
     expect(r.status).toBe("awaiting_approval");
     expect(sellerCalls[0].url).toBe("https://sec.test/v1/filings?ticker=AAPL");
     expect(r.chosen.input_used).toMatchObject({ query_params: { ticker: "AAPL" }, from_bazaar_example: [] });
+    // The user's own input: no conditions line, no extra confirmation step.
+    expect(r.show_user).toMatch(/^How to pay/);
+    expect(r.next_step).toMatch(/^Show the user show_user/);
   });
 
   it("prepares nothing and returns the top candidates when several match equally", async () => {

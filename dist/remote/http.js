@@ -56,7 +56,8 @@ async function registerTools(server, params, origin, d) {
         description: "Use when the user wants data from a paid API and names the provider or the kind of data (e.g. \"nansen smart money netflow\", " +
             "\"btc price\", \"sec filings aapl\"). In one call it searches the Bazaar, picks the best-matching endpoint this connection can pay " +
             "within the per-payment limit (and max_price_usd), fills required input from the Bazaar's example when body / query_params are not " +
-            "given, runs every pre-payment check of request_x402_payment and returns the same approval link and show_user. The result always says " +
+            "given (then show_user starts with those conditions, and the user is asked to confirm them before signing), runs every pre-payment " +
+            "check of request_x402_payment and returns the same approval link and show_user. The result always says " +
             "which endpoint was chosen, its price and the input used (chosen), so the user can tell if it is not what they meant. When several " +
             "endpoints match equally well it prepares nothing and returns status `choose` with the top three candidates: pick one and call " +
             "request_x402_payment. Nothing is paid until the user signs the approval link. THIS LEADS TO SPENDING MONEY once the user signs.",

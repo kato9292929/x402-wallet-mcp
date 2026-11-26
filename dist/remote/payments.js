@@ -5,7 +5,7 @@ import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { address as solAddress, getAddressEncoder, getProgramDerivedAddress, getBase58Encoder, getCompiledTransactionMessageDecoder, getBase64Decoder, getBase64Encoder, getTransactionDecoder, getTransactionEncoder, } from "@solana/kit";
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
 import { CHAINS, formatMicros, parseUsdToMicros } from "../chains.js";
-import { decide, describeCandidate, findCandidates, requestFor } from "../buy.js";
+import { decide, describeCandidate, exampleConditions, findCandidates, requestFor } from "../buy.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
 import { activeFeePayerRefusals, activeRefusals, FEE_PAYER_REFUSAL_TTL_MS, NET_REFUSAL_TTL_MS, } from "../safe/netfail.js";
@@ -224,6 +224,15 @@ export async function buyData(params, args, origin, deps) {
     }
     const choice = requestFor(pick, args);
     const r = await requestPayment(params, { url: choice.url, method: choice.method, body: choice.body }, origin, deps);
+    // Input the user did not give came from the API's example: the user sees those conditions before signing.
+    const conditions = r.status === "awaiting_approval" ? exampleConditions(choice) : null;
+    if (conditions) {
+        r.show_user = `${conditions}\n\n${r.show_user}`;
+        r.next_step =
+            "The input came from the API's example, not from the user's request: before the user signs, tell them these conditions (the first " +
+                "line of show_user) and ask whether they are what they want. If not, do not let them sign this link; call buy_data again with body / " +
+                `query_params built from their answer. ${r.next_step}`;
+    }
     return {
         ...r,
         // The network and price actually asked for (the 402 may choose another of the seller's options than the Bazaar's cheapest).

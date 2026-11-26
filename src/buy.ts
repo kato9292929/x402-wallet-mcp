@@ -107,6 +107,28 @@ export function requestFor(c: Candidate, args: BuyDataArgs): Choice {
   };
 }
 
+/**
+ * One line for the user when the input came from the Bazaar example, e.g.
+ * 'Buying with these conditions (the API's example; you did not choose them): chains=["ethereum","solana"], filters={...}'.
+ */
+export function exampleConditions(choice: Choice): string | null {
+  const from = choice.input_used.from_bazaar_example;
+  if (!from.length) return null;
+  const parts: string[] = [];
+  if (from.includes("body") && choice.body && typeof choice.body === "object" && !Array.isArray(choice.body)) {
+    for (const [k, v] of Object.entries(choice.body as Record<string, unknown>)) parts.push(`${k}=${JSON.stringify(v)}`);
+  } else if (from.includes("body")) {
+    parts.push(`body=${JSON.stringify(choice.body)}`);
+  }
+  for (const f of from.filter((x) => x.startsWith("query_params."))) {
+    const k = f.slice("query_params.".length);
+    parts.push(`${k}=${choice.input_used.query_params?.[k]}`);
+  }
+  let line = parts.join(", ");
+  if (line.length > 400) line = line.slice(0, 399) + "…";
+  return `Buying with these conditions (the API's example; you did not choose them): ${line}`;
+}
+
 export function describeCandidate(c: Candidate) {
   return {
     resource: c.item.resource,
