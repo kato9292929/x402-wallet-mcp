@@ -215,6 +215,14 @@ describe("remote: approval flow (Base)", () => {
     expect(second).toMatchObject({ status: "blocked", blocked_reason: "over_cap" });
   });
 
+  it("says which of the seller's terms changed before signing", async () => {
+    const accepts = [exactReq("5000", BASE_SEPOLIA)];
+    const { deps, params } = setup({ accepts });
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    accepts[0] = exactReq("6000", BASE_SEPOLIA);
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps)).rejects.toThrow("amount: 5000 → 6000");
+  });
+
   it("limits how many payments can wait for approval", async () => {
     const { deps, params } = setup();
     for (let i = 0; i < MAX_PENDING_PER_ADDRESS; i++) {

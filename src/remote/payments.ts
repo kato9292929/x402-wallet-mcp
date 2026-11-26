@@ -376,8 +376,12 @@ export async function buildPayment(id: string, token: string | null, deps: FlowD
     throw new FlowError("払う前の確認で止まりました。支払いはしていません。Claude に戻って結果を確かめてください。", 409);
   }
   const sel = prep.selected;
-  if (sel.network !== rec.network || sel.amount !== rec.amount || sel.payTo !== rec.payTo || sel.asset !== rec.asset) {
-    throw new FlowError("売り手の請求が、画面の内容から変わりました。支払いはしていません。", 409);
+  const changed = (["network", "amount", "payTo", "asset"] as const)
+    .filter((k) => sel[k] !== rec[k])
+    .map((k) => `${k}: ${rec[k]} → ${sel[k]}`);
+  if (changed.length) {
+    console.log(`[agentpay402] seller's terms changed for ${id}: ${changed.join(", ")}`);
+    throw new FlowError(`売り手の請求が、画面の内容から変わりました（${changed.join("、")}）。支払いはしていません。`, 409);
   }
 
   const built = await buildUnsigned(prep, rec.payer);
