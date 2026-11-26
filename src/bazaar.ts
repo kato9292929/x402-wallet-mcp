@@ -140,3 +140,15 @@ export async function bazaarListedAmount(url: string, network: string, fetchImpl
   const hit = acceptsOf(item).find((r) => r.scheme === "exact" && r.network === network);
   return hit?.amount ?? null;
 }
+
+/** Raw Bazaar search results (with their extensions), in the Bazaar's ranking order. */
+export async function searchBazaar(query: string, fetchImpl: typeof fetch = fetch, limit = 20): Promise<BazaarItem[]> {
+  const qs = new URLSearchParams({ query, limit: String(Math.min(Math.max(limit, 1), 20)) });
+  const json = await getJson(`${BAZAAR_BASE}/search?${qs}`, fetchImpl);
+  return (json.resources ?? json.items ?? []) as BazaarItem[];
+}
+
+/** USD price options of a Bazaar item, normalized like a 402's. */
+export function bazaarAccepts(item: BazaarItem): Requirement[] {
+  return acceptsOf(item);
+}

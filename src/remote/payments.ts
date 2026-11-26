@@ -15,7 +15,8 @@ import {
   getTransactionEncoder,
 } from "@solana/kit";
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
-import { CHAINS, formatMicros } from "../chains.js";
+import { CHAINS, formatMicros, parseUsdToMicros } from "../chains.js";
+import { decide, describeCandidate, exampleConditions, findCandidates, requestFor, type BuyDataArgs } from "../buy.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf, type ChainResult, type PayerKey } from "../safe/chain.js";
 import {
@@ -264,6 +265,64 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
         "After the user says they approved or rejected, call get_x402_result with request_id.",
     }),
   );
+}
+
+// ------------------------------------------------------------------ buy_data
+
+/**
+ * From a short description of the data to an approval link: picks the best Bazaar match this wallet can pay
+ * within the per-payment limit (and max_price_usd), fills required input from the Bazaar example when none is
+ * given, then runs request_x402_payment. When the match is not clear, nothing is prepared and the top three
+ * candidates are returned. Money moves only when the user signs the approval link, as with request_x402_payment.
+ */
+export async function buyData(params: RemoteParams, args: BuyDataArgs, origin: string, deps: FlowDeps) {
+  const perCall = parseUsdToMicros(params.perCallMaxUsd);
+  const asked = args.max_price_usd ? parseUsdToMicros(args.max_price_usd) : perCall;
+  const cap = asked < perCall ? asked : perCall;
+  const candidates = await findCandidates(args, new AddressWallet(params).chains(), cap, deps.fetch);
+  if (!candidates.length) {
+    return {
+      status: "no_match",
+      paid: false,
+      query: args.query,
+      message: `No paid API in the Bazaar matched "${args.query}" within $${formatMicros(cap)} per request on a network this connection pays.`,
+      next_step: "Nothing was prepared. Try list_bazaar_resources with other words (the provider's name or the kind of data), or ask the user.",
+    };
+  }
+  const pick = decide(candidates);
+  if (!pick) {
+    return {
+      status: "choose",
+      paid: false,
+      query: args.query,
+      candidates: candidates.slice(0, 3).map(describeCandidate),
+      next_step:
+        "Nothing was prepared: several endpoints match equally well. Pick the one that fits what the user asked for (ask the user if unclear), " +
+        "then call request_x402_payment with its resource URL and input, or buy_data again with a more specific query.",
+    };
+  }
+  const choice = requestFor(pick, args);
+  const r: Record<string, any> = await requestPayment(params, { url: choice.url, method: choice.method, body: choice.body as any }, origin, deps);
+  // Input the user did not give came from the API's example: the user sees those conditions before signing.
+  const conditions = r.status === "awaiting_approval" ? exampleConditions(choice) : null;
+  if (conditions) {
+    r.show_user = `${conditions}\n\n${r.show_user}`;
+    r.next_step =
+      "The input came from the API's example, not from the user's request: before the user signs, tell them these conditions (the first " +
+      "line of show_user) and ask whether they are what they want. If not, do not let them sign this link; call buy_data again with body / " +
+      `query_params built from their answer. ${r.next_step}`;
+  }
+  return {
+    ...r,
+    // The network and price actually asked for (the 402 may choose another of the seller's options than the Bazaar's cheapest).
+    chosen: {
+      ...describeCandidate(pick),
+      ...(r.payment ? { network: r.payment.network, price_usd: r.payment.priceUsd } : {}),
+      url: choice.url,
+      input_used: choice.input_used,
+    },
+    other_candidates: candidates.slice(1, 3).map(describeCandidate),
+  };
 }
 
 // ------------------------------------------------------------------ get_x402_result

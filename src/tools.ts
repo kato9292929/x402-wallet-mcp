@@ -95,6 +95,9 @@ export function registerReadOnlyTools(register: RegisterTool, ctx: ReadOnlyTools
     {
       title: "Get wallet address",
       description:
+        (payTool === "request_x402_payment"
+          ? "Only when the connection URL includes a wallet address; otherwise the wallet is chosen on the approval page and this tool is not needed. "
+          : "") +
         "Returns the address of the configured wallet on each chain it can pay on (CAIP-2 ids such as eip155:84532 for Base Sepolia). " +
         "Use it to tell the user where to send funds or which address will appear as the payer. Read-only: looks the address up with the " +
         "wallet provider and moves no money. Fails with a clear message when no wallet is configured (WALLET_PROVIDER=none).",
@@ -159,6 +162,7 @@ export function registerReadOnlyTools(register: RegisterTool, ctx: ReadOnlyTools
     {
       title: "List Bazaar resources",
       description:
+        "Use first when the user wants data from a paid API or names a data provider (e.g. Nansen, CoinGecko). " +
         "Finds paid x402 APIs in the public CDP Bazaar catalog. With `query` (and optional network / price filters) it runs a ranked search; " +
         "without arguments it lists the catalog page by page. Returns each resource's URL, description, HTTP method and prices per network. " +
         `Use it to discover services; then use get_resource_details for one entry, check_seller before buying, and ${payTool} to pay. ` +

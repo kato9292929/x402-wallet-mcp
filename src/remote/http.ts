@@ -4,10 +4,12 @@ import { VERSION } from "../server.js";
 import { registerReadOnlyTools, requestShape, ResultError, run } from "../tools.js";
 import { PaymentError } from "../x402/request.js";
 import { messagePage, approvalPage } from "./page.js";
+import { REMOTE_INSTRUCTIONS } from "../instructions.js";
 import { ParamError, parseParams, type RemoteParams } from "./params.js";
 import {
   FlowError,
   buildPayment,
+  buyData,
   getResult,
   pageRecord,
   rejectPayment,
@@ -40,14 +42,16 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
     {
       title: "Request an x402 payment (approval link)",
       description:
-        "Starts a payment for an x402 API and returns an approval link. Nothing is paid until the user opens the link and signs in their own " +
-        "wallet (Phantom on Solana, Rabby / MetaMask on Base). First it runs every pre-payment check: the owner's per-payment and 24-hour " +
+        "Use to buy one response from a paid API once the endpoint is known (to go from a description of the data to a link in one call, use " +
+        "buy_data). Starts a payment for the x402 API and returns an approval link. Nothing is paid until the user opens the link and signs in " +
+        "their own wallet (Phantom on Solana, Rabby / MetaMask on Base). First it runs every pre-payment check: the owner's per-payment and 24-hour " +
         "limits, the seller's Seller Probe record, required input, the Bazaar price, networks the seller refused recently, a Solana " +
         "facilitator known to refuse Phantom-signed transactions (facilitator_incompatible) and whether the seller's Solana address can " +
         "receive the token (payto_account_missing); if one fails it returns status `blocked` with the reason, a `detail` to explain to the " +
-        "user (what happened, whose side, what to do next) and no link. Otherwise it also returns show_user: text for the user (how to pay, " +
-        "that the result is kept 30 minutes, and the notice with the terms link), to show them as is, translated into their language. Otherwise it returns approve_url, payment.chain and payment.sign_with (the " +
-        "wallet to sign in), phantom_app_url for Solana (to approve on a phone in the Phantom app), request_id and expires_at (5 minutes). " +
+        "user (what happened, whose side, what to do next) and no link. When the checks pass it returns approve_url, payment.chain and " +
+        "payment.sign_with (the wallet to sign in), phantom_app_url for Solana (to approve on a phone in the Phantom app), request_id, " +
+        "expires_at (5 minutes) and show_user: text for the user (how to pay, that the result is kept 30 minutes, and the notice with the " +
+        "terms link), to show as is, translated into the user's language. " +
         "Any connection pays on Solana and Base. Show approve_url to the user as a link, then call get_x402_result with request_id " +
         "after the user says they approved. THIS LEADS TO SPENDING MONEY once the user signs.",
       inputSchema: {
@@ -63,6 +67,39 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
       run(async () => {
         const input = allow_incompatible_facilitator ? { ...args, allowIncompatibleFacilitator: true } : args;
         const r = await requestPayment(params, input, origin, d);
+        if (r?.status === "blocked") throw new ResultError(r);
+        return r;
+      }),
+  );
+
+  register(
+    "buy_data",
+    {
+      title: "Buy data from a paid API (approval link)",
+      description:
+        "Use when the user wants data from a paid API and names the provider or the kind of data (e.g. \"nansen smart money netflow\", " +
+        "\"btc price\", \"sec filings aapl\"). In one call it searches the Bazaar, picks the best-matching endpoint this connection can pay " +
+        "within the per-payment limit (and max_price_usd), fills required input from the Bazaar's example when body / query_params are not " +
+        "given (then show_user starts with those conditions, and the user is asked to confirm them before signing), runs every pre-payment " +
+        "check of request_x402_payment and returns the same approval link and show_user. The result always says " +
+        "which endpoint was chosen, its price and the input used (chosen), so the user can tell if it is not what they meant. When several " +
+        "endpoints match equally well it prepares nothing and returns status `choose` with the top three candidates: pick one and call " +
+        "request_x402_payment. Nothing is paid until the user signs the approval link. THIS LEADS TO SPENDING MONEY once the user signs.",
+      inputSchema: {
+        query: z.string().min(2).describe('Short description of the data: the provider and/or kind of data, e.g. "nansen smart money netflow"'),
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional().describe("HTTP method, if the user or the API documentation says"),
+        body: z
+          .union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())])
+          .optional()
+          .describe("Request body built from the user's request (e.g. the token or address they asked about). Omit to use the Bazaar's example"),
+        query_params: z.record(z.string(), z.string()).optional().describe('Query parameters from the user\'s request, e.g. {"ticker": "AAPL"}'),
+        max_price_usd: z.string().optional().describe('Highest price per request to consider, e.g. "0.02" (never above the owner\'s limit)'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async (args: any) =>
+      run(async () => {
+        const r: any = await buyData(params, args, origin, d);
         if (r?.status === "blocked") throw new ResultError(r);
         return r;
       }),
@@ -101,6 +138,7 @@ export async function handleMcp(req: Request): Promise<Response> {
   const origin = getPublicOrigin(req);
   const handler = createMcpHandler((server) => registerTools(server, params, origin, d), {
     serverInfo: { name: "agentpay402", version: VERSION },
+    instructions: REMOTE_INSTRUCTIONS,
   } as any);
   return handler(req);
 }
