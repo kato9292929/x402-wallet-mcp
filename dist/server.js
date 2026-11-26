@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NOTICE, showUserForApproval } from "./notice.js";
+import { LOCAL_INSTRUCTIONS } from "./instructions.js";
 import { z } from "zod";
 import { CHAINS, normalizeNetwork } from "./chains.js";
 import { configPath, configSources, loadConfig, paymentLogPath, schemePriority } from "./config.js";
@@ -28,7 +29,7 @@ export function createServer(opts) {
         nevermined: new NeverminedPayer(),
         fetch: opts.fetch,
     });
-    const server = new McpServer({ name: "agentpay402-mcp", version: VERSION });
+    const server = new McpServer({ name: "agentpay402-mcp", version: VERSION }, { instructions: LOCAL_INSTRUCTIONS });
     const pickChains = (chain) => {
         if (!provider)
             throw new Error(NO_WALLET);
