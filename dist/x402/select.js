@@ -14,7 +14,7 @@ function nvmEnvIsTestnet(env) {
 export function evaluate(accepts, ctx) {
     return accepts.map((r) => {
         if (ctx.avoidNetworks?.includes(r.network)) {
-            return { requirement: r, usable: false, reason: `this seller refused a payment on ${r.network} recently`, avoided: true };
+            return { requirement: r, usable: false, reason: `this seller refused a payment on ${r.network} recently`, avoided: true, avoidedBy: "network" };
         }
         if (!ctx.priority.includes(r.scheme)) {
             return { requirement: r, usable: false, reason: `scheme "${r.scheme}" is not in SCHEME_PRIORITY (${ctx.priority.join(",")})` };
@@ -59,6 +59,18 @@ export function evaluate(accepts, ctx) {
                     requirement: r,
                     usable: false,
                     reason: `asset ${r.asset} on ${r.network} is not a known USD stablecoin, so it cannot be checked against the USD limits`,
+                };
+            }
+            const feePayer = r.network.startsWith("solana:") && typeof r.extra?.feePayer === "string" ? r.extra.feePayer : undefined;
+            const why = feePayer ? ctx.avoidFeePayers?.[feePayer] : undefined;
+            if (feePayer && why) {
+                return {
+                    requirement: r,
+                    usable: false,
+                    reason: `its facilitator (fee payer ${feePayer}) refuses the transactions Phantom signs, because Phantom adds safety-check instructions that read the fee payer; it ${why}`,
+                    avoided: true,
+                    avoidedBy: "facilitator",
+                    feePayer,
                 };
             }
             return { requirement: r, usable: true };

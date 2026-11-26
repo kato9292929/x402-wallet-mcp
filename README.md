@@ -92,10 +92,12 @@ What `make_x402_request` does, in order:
    - an input the 402 marks as required is missing;
    - the price is over a limit, or differs from the Bazaar listing (`priceMismatch: block`);
    - every network the seller offers refused a payment recently.
+   - with a browser wallet (Phantom), every Solana option goes through a facilitator known to refuse the transactions Phantom signs (`facilitator_incompatible`): a built-in list, plus any facilitator that refused such a payment in the last 7 days. Another option the seller offers (such as Base) is chosen instead when there is one;
+   - the seller's Solana address has no account to receive the token (`payto_account_missing`); if the RPC cannot tell, the payment goes ahead with a warning.
 2. **Pay** — sign, record the attempt, send.
 3. **After paying** — find the transfer on chain (the seller's header is only a hint). If the seller took the money but did not deliver, and it publishes Delivery Receipt keys, refetch once with the same payment. A payment is never sent twice.
 
-The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or `rejected_by_seller`, with the transaction, a hash of the body and the receipt.
+The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or `rejected_by_seller`, with the transaction, a hash of the body and the receipt. A `blocked` or `rejected_by_seller` result carries a `detail`: what happened, which side the problem is on (wallet, facilitator, seller, or AgentPay's own check) and what to do next.
 
 ### Approval links (the connector at agentpay.x402jp.com/mcp)
 

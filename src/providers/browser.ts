@@ -434,30 +434,48 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 /** The approval page style, shared with the remote server's page. */
-export const APPROVAL_CSS = `:root{--bg:#131313;--card:#1c1c1c;--row:#262626;--line:#333;--text:#fff;--sub:#999;--accent:#ab9ff2;--accent-ink:#1c1c1c;--warn:#ffd27a}
+/** Fonts for the approval pages: Outfit, as on the front page (agentpay.x402jp.com). */
+export const APPROVAL_FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300..600&display=swap" rel="stylesheet">`;
+
+/** The approval page's look: the front page's colours, type, borders and cards. */
+export const APPROVAL_CSS = `:root{--bg:#151517;--ink:#ededed;--muted:#a1a1a1;--dim:#6e6e73;--line:rgba(255,255,255,.12);--chip:rgba(255,255,255,.04);
+--ok:#6ee7a8;--err:#ff8a8a;--warn:#f5c97a}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--text);
-font-family:Inter,-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-.card{width:100%;max-width:400px;background:var(--card);border-radius:24px;padding:24px 20px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
-.brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--sub)}
-.brand i{width:22px;height:22px;border-radius:7px;background:var(--accent);display:inline-block}
-.site{margin:22px 0 6px;text-align:center}
-.host{display:inline-block;padding:6px 14px;border-radius:999px;background:var(--row);font-size:14px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lead{color:var(--sub);font-size:13px;text-align:center;margin:10px 0 0}
-.amount{text-align:center;margin:18px 0 22px}
-.amount b{display:block;font-size:40px;font-weight:700;letter-spacing:-.02em}
-.amount span{color:var(--sub);font-size:14px}
-.rows{background:var(--row);border-radius:14px;overflow:hidden}
-.r{display:flex;justify-content:space-between;gap:12px;padding:13px 14px;font-size:14px}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--ink);
+font-family:Outfit,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",Meiryo,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.card{position:relative;width:100%;max-width:420px;border:1px solid var(--line);border-radius:16px;padding:26px 22px 22px;
+background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01));overflow:hidden}
+.card::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;opacity:.85;
+background:linear-gradient(90deg,#ff2d2d,#ff9a00,#ffe600,#2bff5a,#00e5ff,#2a5bff,#8a2bff)}
+.brand{font-size:19px;font-weight:500;letter-spacing:-.02em;color:var(--ink)}
+.brand i{display:none}
+.site{margin:22px 0 4px;text-align:center}
+.host{display:inline-block;padding:6px 14px;border:1px solid var(--line);border-radius:999px;background:var(--chip);font-size:14px;font-weight:500;
+max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lead{color:var(--muted);font-size:13px;text-align:center;margin:12px 0 0}
+.amount{text-align:center;margin:16px 0 22px}
+.amount b{display:block;font-size:44px;font-weight:500;letter-spacing:-.035em;line-height:1.1}
+.amount span{display:block;margin-top:4px;color:var(--muted);font-size:14px}
+.rows{margin:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.r{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;font-size:14px}
 .r+.r{border-top:1px solid var(--line)}
-.r dt{color:var(--sub);margin:0}.r dd{margin:0;text-align:right;font-weight:500;word-break:break-all}
-.warn{margin:12px 0 0;padding:10px 14px;border-radius:12px;background:rgba(255,210,122,.1);color:var(--warn);font-size:13px}
+.r dt{color:var(--dim);margin:0}.r dd{margin:0;text-align:right;font-weight:500;word-break:break-all}
+.warn{margin:12px 0 0;padding:10px 14px;border:1px solid rgba(245,201,122,.3);border-radius:12px;color:var(--warn);font-size:13px}
 .btns{display:flex;gap:10px;margin-top:20px}
-button{flex:1;font:inherit;font-size:16px;font-weight:600;padding:14px;border-radius:14px;border:0;cursor:pointer;transition:opacity .15s}
-#reject{background:#333;color:var(--text)}#approve{background:var(--accent);color:var(--accent-ink)}
-button:hover{opacity:.9}button:disabled{opacity:.4;cursor:default}
-#msg{min-height:20px;margin:14px 0 0;text-align:center;font-size:14px;color:var(--sub)}
-#msg.ok{color:#4ade80}#msg.err{color:#ff8a8a}
+button{flex:1;font:inherit;font-size:16px;font-weight:500;padding:13px;border-radius:10px;cursor:pointer;transition:background .2s,opacity .2s,border-color .2s}
+#reject{background:transparent;color:var(--ink);border:1px solid var(--line)}#reject:hover{border-color:rgba(255,255,255,.3)}
+#approve{color:#151517;border:0;font-weight:600;letter-spacing:.01em;
+background-image:linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff);transition:filter .2s,opacity .2s}
+#approve:hover{filter:brightness(1.08)}
+button:disabled{opacity:.4;cursor:default}
+#msg{min-height:20px;margin:14px 0 0;text-align:center;font-size:14px;line-height:1.6;color:var(--muted)}
+#msg.ok{color:var(--ok)}#msg.err{color:var(--err)}
+:focus-visible{outline:2px solid #fff;outline-offset:3px}
+[hidden]{display:none!important}
+#approve{flex:2.2;white-space:nowrap}
+#reject{white-space:nowrap}
+@media (max-width:380px){.btns{flex-direction:column-reverse}}
 `;
 
 export const CHAIN_PARAMS: Record<number, unknown> = {
@@ -482,17 +500,18 @@ function approvalPage(d: ReturnType<BrowserWalletProvider["pageData"]>): string 
   const json = JSON.stringify({ ...d, chainParams }).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentPay402 支払いの承認</title>
+<title>AgentPay 支払いの承認</title>
+${APPROVAL_FONTS}
 <style>
 ${APPROVAL_CSS}</style></head><body>
 <main class="card">
-<div class="brand"><i></i>AgentPay402</div>
+<div class="brand">AgentPay</div>
 <div class="site"><span class="host" id="host"></span></div>
 <p class="lead">Claude がこの API に支払おうとしています</p>
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>
 <dl class="rows">
 <div class="r"><dt>支払い先</dt><dd id="to"></dd></div>
-<div class="r"><dt>払う財布</dt><dd id="from"></dd></div>
+<div class="r"><dt>払うウォレット</dt><dd id="from"></dd></div>
 <div class="r"><dt>API</dt><dd id="url"></dd></div>
 </dl>
 <p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>

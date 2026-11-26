@@ -7,7 +7,8 @@ import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serialize
 import { CHAINS, formatMicros } from "../chains.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
-import { activeRefusals, NET_REFUSAL_TTL_MS } from "../safe/netfail.js";
+import { activeFeePayerRefusals, activeRefusals, FEE_PAYER_REFUSAL_TTL_MS, NET_REFUSAL_TTL_MS, } from "../safe/netfail.js";
+import { offerChangedDetail } from "../x402/explain.js";
 import { describeRequirement } from "../x402/parse.js";
 import { PaymentError, X402Requester } from "../x402/request.js";
 import { configFor } from "./params.js";
@@ -46,6 +47,7 @@ const K = {
     sent: (id) => `ap:t:${id}`,
     spent: (addr) => `ap:s:${addr}`,
     refusals: (host) => `ap:n:${host}`,
+    feePayerRefusals: () => "ap:f",
 };
 // bigint-safe JSON (a selected requirement carries priceMicros as bigint)
 const toJson = (v) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? { $big: x.toString() } : x));
@@ -95,6 +97,14 @@ export async function requesterFor(params, deps) {
         loadConfig: async () => configFor(params),
         log,
         netFailures: netFailuresIn(deps.store),
+        feePayerRefusals: {
+            read: async () => (await deps.store.get(K.feePayerRefusals())) ?? [],
+            record: async (feePayer, reason, host) => {
+                const list = activeFeePayerRefusals((await deps.store.get(K.feePayerRefusals())) ?? []).filter((r) => r.feePayer !== feePayer);
+                list.push({ ts: new Date().toISOString(), feePayer, reason, host });
+                await deps.store.set(K.feePayerRefusals(), list, FEE_PAYER_REFUSAL_TTL_MS / 1000);
+            },
+        },
         sellerTimeoutMs: SELLER_TIMEOUT_MS,
         // Kept short so the seller's answer plus this search fit in one request; get_x402_result checks again later.
         findOptions: { attempts: 6, intervalMs: 5000 },
@@ -173,7 +183,8 @@ export async function requestPayment(params, input, origin, deps) {
             (solana
                 ? "Show the user approve_url as a link (and phantom_app_url for approving on a phone in the Phantom app). "
                 : "Show the user approve_url as a link to open in a browser with Rabby or MetaMask. ") +
-            "The link expires in 5 minutes. After the user says they approved or rejected, call get_x402_result with request_id.",
+            "The link expires in 5 minutes. If Phantom says the request could not be simulated, the user can cancel: nothing is paid. " +
+            "After the user says they approved or rejected, call get_x402_result with request_id.",
     }));
 }
 // ------------------------------------------------------------------ get_x402_result
@@ -202,11 +213,11 @@ export async function getResult(id, deps) {
 // ------------------------------------------------------------------ approval page actions
 async function pendingFor(id, token, deps) {
     if (!/^[0-9a-f]{32}$/.test(id) || !token)
-        throw new FlowError("この承認リンクは正しくありません。", 404);
+        throw new FlowError("This approval link is not valid.", 404);
     const p = await deps.store.get(K.pending(id));
     if (!p || p.token !== token) {
         const r = await deps.store.get(K.result(id));
-        throw new FlowError(r ? "この支払いは、もう処理が終わっています。" : "この承認リンクは期限が切れました（5分）。Claude にもう一度頼んでください。", 410);
+        throw new FlowError(r ? "This payment has already been handled." : "This approval link has expired (5 minutes). Ask Claude again.", 410);
     }
     return p;
 }
@@ -225,7 +236,7 @@ async function finishWith(rec, result, deps) {
 export async function rejectPayment(id, token, deps) {
     const rec = await pendingFor(id, token, deps);
     if (await deps.store.get(K.lock(id)))
-        throw new FlowError("この支払いは、いま処理しています。", 409);
+        throw new FlowError("This payment is being processed.", 409);
     await finishWith(rec, { url: rec.input.url, status: "blocked", blocked_reason: "not_approved", paid: false, message: "The user rejected the payment. Nothing was signed or paid." }, deps);
     return { ok: true };
 }
@@ -264,17 +275,17 @@ function payerFor(rec, fromPage) {
     const given = (fromPage ?? "").trim();
     if (rec.payer) {
         if (given && given.toLowerCase() !== rec.payer.toLowerCase()) {
-            throw new FlowError(`この支払いは ${rec.payer} から払う設定です。ウォレットでそのアカウントを選んでください。`);
+            throw new FlowError(`This payment is set to be paid from ${rec.payer}. Select that account in your wallet.`);
         }
         return rec.payer;
     }
     if (!given)
-        throw new FlowError("ウォレットのアドレスが読み取れませんでした。もう一度押してください。");
+        throw new FlowError("Could not read the wallet's address. Press again.");
     try {
         return family === "solana" ? solAddress(given) : getAddress(given);
     }
     catch {
-        throw new FlowError("ウォレットのアドレスが読み取れませんでした。");
+        throw new FlowError("Could not read the wallet's address.");
     }
 }
 function paramsWithPayer(rec, payer) {
@@ -283,7 +294,7 @@ function paramsWithPayer(rec, payer) {
 export async function buildPayment(id, token, deps, payerFromPage) {
     let rec = await pendingFor(id, token, deps);
     if (await deps.store.get(K.lock(id)))
-        throw new FlowError("この支払いは、いま処理しています。", 409);
+        throw new FlowError("This payment is being processed.", 409);
     const payer = payerFor(rec, payerFromPage);
     rec = { ...rec, payer, params: paramsWithPayer(rec, payer) };
     // Check everything again now, against a fresh 402.
@@ -291,24 +302,37 @@ export async function buildPayment(id, token, deps, payerFromPage) {
     const prep = await requester.prepare(rec.input);
     if (prep.kind === "result") {
         await finishWith(rec, prep.result, deps);
-        throw new FlowError("払う前の確認で止まりました。支払いはしていません。Claude に戻って結果を確かめてください。", 409);
+        throw new FlowError("Stopped by a check before paying. Nothing was paid. Go back to Claude to see why.", 409);
     }
     const sel = prep.selected;
-    if (sel.network !== rec.network || sel.amount !== rec.amount || sel.payTo !== rec.payTo || sel.asset !== rec.asset) {
-        throw new FlowError("売り手の請求が、画面の内容から変わりました。支払いはしていません。", 409);
+    const offer_changed = ["network", "amount", "payTo", "asset"]
+        .filter((k) => sel[k] !== rec[k])
+        .map((k) => ({ field: k, before: String(rec[k] ?? ""), after: String(sel[k] ?? "") }));
+    if (offer_changed.length) {
+        console.log(`[agentpay402] seller's terms changed for ${id}: ${JSON.stringify(offer_changed)}`);
+        await finishWith(rec, {
+            url: rec.input.url,
+            status: "blocked",
+            blocked_reason: "offer_changed",
+            offer_changed,
+            detail: offerChangedDetail(offer_changed),
+            paid: false,
+            message: "The seller's payment terms changed before the wallet signed. Nothing was paid.",
+        }, deps);
+        throw new FlowError("The seller's terms changed from what is shown. Nothing was paid.", 409);
     }
     const built = await buildUnsigned(prep, rec.payer);
     const record = { family: built.family, prep: toJson(prep), payload: toJson(built.payload), builtAt: Date.now() };
     let forPage;
     if (built.family === "solana") {
         if (!built.messageBytes)
-            throw new FlowError("Solana の支払いを用意できませんでした。", 500);
+            throw new FlowError("Could not prepare the Solana payment.", 500);
         record.messageBytes = getBase64Decoder().decode(built.messageBytes);
         forPage = { family: "solana", wireTx: built.payload.payload.transaction };
     }
     else {
         if (!built.typedData)
-            throw new FlowError("Base の支払いを用意できませんでした。", 500);
+            throw new FlowError("Could not prepare the Base payment.", 500);
         record.typedData = toJson(built.typedData);
         forPage = {
             family: "evm",
@@ -501,11 +525,11 @@ async function attachSignature(b, payer, signature, signedTx, want) {
             sig = new Uint8Array(getBase58Encoder().encode(signature));
         }
         catch {
-            throw new FlowError("ウォレットの署名を読めませんでした。支払いはしていません。");
+            throw new FlowError("Could not read the wallet's signature. Nothing was paid.");
         }
         const built = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payload.payload.transaction)));
         if (getBase64Decoder().decode(built.messageBytes) !== b.messageBytes)
-            throw new FlowError("用意した支払いと合いません。支払いはしていません。", 500);
+            throw new FlowError("This does not match the prepared payment. Nothing was paid.", 500);
         // The transaction the wallet actually signed (wallets may add their own instructions), checked by its outcome.
         let tx = built;
         if (signedTx) {
@@ -513,7 +537,7 @@ async function attachSignature(b, payer, signature, signedTx, want) {
                 tx = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(signedTx)));
             }
             catch {
-                throw new FlowError("ウォレットが返した取引を読めませんでした。支払いはしていません。");
+                throw new FlowError("Could not read the transaction the wallet returned. Nothing was paid.");
             }
         }
         const changes = solanaWalletChanges(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
@@ -522,10 +546,10 @@ async function attachSignature(b, payer, signature, signedTx, want) {
             const shape = describeSolanaMessage(new Uint8Array(tx.messageBytes), want.feePayer);
             const bh = solanaBlockhashes(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
             console.log(`[agentpay402] refused signed payment: ${problem} | ${changes} | blockhash ${bh.built} → ${bh.signed} | ${shape}`);
-            throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${changes}｜${shape}）。支払いはしていません。`);
+            throw new FlowError(`The signed transaction does not match the payment shown (${problem} | ${changes} | ${shape}). Nothing was paid.`);
         }
         if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
-            throw new FlowError("この支払いに対する、指定したウォレットの署名ではありません。支払いはしていません。");
+            throw new FlowError("This is not the chosen wallet's signature for this payment. Nothing was paid.");
         }
         const signers = {};
         for (const k of Object.keys(tx.signatures))
@@ -534,12 +558,12 @@ async function attachSignature(b, payer, signature, signedTx, want) {
     }
     else {
         if (!/^0x[0-9a-fA-F]{130}$/.test(signature))
-            throw new FlowError("ウォレットの署名を読めませんでした。支払いはしていません。");
+            throw new FlowError("Could not read the wallet's signature. Nothing was paid.");
         signature = normalizeEvmSignature(signature);
         const td = fromJson(b.typedData);
         const recovered = await recoverTypedDataAddress({ ...td, signature: signature });
         if (getAddress(recovered) !== getAddress(payer)) {
-            throw new FlowError("指定したウォレットの署名ではありません。支払いはしていません。");
+            throw new FlowError("This is not the chosen wallet's signature. Nothing was paid.");
         }
         payload.payload.signature = signature;
     }
@@ -550,7 +574,7 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
     const rec = await pendingFor(id, token, deps);
     const b = await deps.store.get(K.build(id));
     if (!b)
-        throw new FlowError("支払いの用意が済んでいないか、時間が経ちすぎました。もう一度押してください。", 409);
+        throw new FlowError("The payment is not prepared, or too much time has passed. Press again.", 409);
     const prepForCheck = fromJson(b.prep);
     const extra = prepForCheck.selected.raw.extra ?? {};
     const want = b.family === "solana"
@@ -559,7 +583,7 @@ export async function signAndPay(id, token, signature, deps, signedTx) {
     const payment = await attachSignature(b, rec.payer, signature, signedTx, want);
     // At most once per request id, from here on.
     if (!(await deps.store.setIfAbsent(K.lock(id), Date.now(), LOCK_TTL_S)))
-        throw new FlowError("この支払いは、いま処理しています。", 409);
+        throw new FlowError("This payment is being processed.", 409);
     const prep = fromJson(b.prep);
     const requester = await requesterFor(rec.params, deps);
     let result;

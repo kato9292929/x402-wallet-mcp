@@ -52,6 +52,8 @@ function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Resp
       bazaarPrice: async () => null,
       findPayment: async () => ({ settlement: "verified", tx: TX, transferred: 5000n, headerTxMatched: true, ...opts.chain }),
       sellerTimeoutMs: 50,
+      checkPayTo: async () => ({ exists: true }),
+      walletCode: async () => "0x",
     },
   };
   const params = parseParams(new URL(`${ORIGIN}/api/mcp?base=${owner.address}&network=testnet`));
@@ -133,7 +135,7 @@ describe("remote: choosing the chain (any connection URL pays on Solana and Base
     // The 24-hour limit counts what that Base wallet already paid: 0.006 + 0.006 > 0.01.
     const r2 = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     expect(r2.status).toBe("awaiting_approval"); // no wallet known yet
-    await expect(buildPayment(r2.request_id, tokenOf(r2.approve_url), deps, owner.address)).rejects.toThrow(/払う前の確認で止まりました/);
+    await expect(buildPayment(r2.request_id, tokenOf(r2.approve_url), deps, owner.address)).rejects.toThrow(/Stopped by a check before paying/);
     expect((await getResult(r2.request_id, deps)).status).toBe("blocked");
     // Another wallet has its own 24 hours.
     const r3 = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
@@ -170,7 +172,7 @@ describe("remote: approval flow (Base)", () => {
     expect(res).toMatchObject({ status: "fulfilled", paid: true, body: JSON.stringify({ ok: true }) });
 
     // The same request id is never paid again.
-    await expect(signAndPay(r.request_id, t, "0x00", deps)).rejects.toThrow(/処理が終わっています/);
+    await expect(signAndPay(r.request_id, t, "0x00", deps)).rejects.toThrow(/already been handled/);
     expect(sellerCalls.filter((c) => new Headers(c.headers).has("payment-signature"))).toHaveLength(1);
   });
 
@@ -179,14 +181,14 @@ describe("remote: approval flow (Base)", () => {
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     const t = tokenOf(r.approve_url);
     const built = await buildPayment(r.request_id, t, deps);
-    await expect(signAndPay(r.request_id, t, await signTyped(stranger, built.typedData as string), deps)).rejects.toThrow(/指定したウォレットの署名ではありません/);
+    await expect(signAndPay(r.request_id, t, await signTyped(stranger, built.typedData as string), deps)).rejects.toThrow(/not the chosen wallet.s signature/);
     expect(sellerCalls.some((c) => new Headers(c.headers).has("payment-signature"))).toBe(false);
   });
 
   it("needs the link's token", async () => {
     const { deps, params } = setup();
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
-    await expect(buildPayment(r.request_id, "wrong", deps)).rejects.toThrow(/期限が切れました/);
+    await expect(buildPayment(r.request_id, "wrong", deps)).rejects.toThrow(/has expired/);
   });
 
   it("reject ends the request without paying", async () => {
@@ -213,6 +215,30 @@ describe("remote: approval flow (Base)", () => {
     await signAndPay(r.request_id, t, await signTyped(owner, built.typedData as string), deps);
     const second = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     expect(second).toMatchObject({ status: "blocked", blocked_reason: "over_cap" });
+  });
+
+  it("stops before signing when the connected EVM wallet has an EIP-7702 delegation", async () => {
+    const { deps } = setup();
+    const delegate = "69007702764179f14f51cdce752f4f775d74e139";
+    deps.requesterOverrides!.walletCode = async () => "0xef0100" + delegate;
+    const params = parseParams(new URL(`${ORIGIN}/mcp?network=testnet`));
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    expect(r.status).toBe("awaiting_approval"); // the wallet is not known yet
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps, owner.address)).rejects.toThrow(/Stopped by a check before paying/);
+    const res: any = await getResult(r.request_id, deps);
+    expect(res).toMatchObject({ status: "blocked", blocked_reason: "wallet_delegated", delegate: "0x" + delegate, paid: false });
+    expect(res.detail).toMatch(/remove the EIP-7702 delegation/);
+  });
+
+  it("says which of the seller's terms changed before signing", async () => {
+    const accepts = [exactReq("5000", BASE_SEPOLIA)];
+    const { deps, params } = setup({ accepts });
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    accepts[0] = exactReq("6000", BASE_SEPOLIA);
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps)).rejects.toThrow("The seller's terms changed from what is shown. Nothing was paid.");
+    const res: any = await getResult(r.request_id, deps);
+    expect(res).toMatchObject({ status: "blocked", blocked_reason: "offer_changed", paid: false, offer_changed: [{ field: "amount", before: "5000", after: "6000" }] });
+    expect(res.detail).toMatch(/amount 5000 → 6000/);
   });
 
   it("limits how many payments can wait for approval", async () => {
