@@ -50,6 +50,9 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
 .wordmark{font-family:var(--display);font-weight:500;font-size:clamp(40px,5vw,76px);line-height:1;letter-spacing:-.035em;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;column-gap:.35em}
 .wordmark span{white-space:nowrap}
 .wordmark .via{font-size:.42em;font-weight:300;color:var(--muted);letter-spacing:-.01em}
+/* See-through over the light beam: the spectrum shows through the letters instead of fighting them. */
+.wordmark span:first-child{color:rgba(255,255,255,.5);text-shadow:0 1px 18px rgba(0,0,0,.18)}
+.wordmark .via{color:rgba(255,255,255,.42)}
 .lede{font-size:clamp(28px,3.05vw,44px);line-height:1.2;font-weight:300;letter-spacing:-.025em;margin-bottom:clamp(24px,2.6vw,36px)}
 .lede span{display:block}
 .tabs{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:14px}

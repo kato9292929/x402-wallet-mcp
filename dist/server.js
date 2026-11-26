@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { NOTICE, showUserForApproval } from "./notice.js";
 import { z } from "zod";
 import { CHAINS, normalizeNetwork } from "./chains.js";
 import { configPath, configSources, loadConfig, paymentLogPath, schemePriority } from "./config.js";
@@ -103,11 +104,15 @@ export function createServer(opts) {
             "record, required input, the Bazaar price and remembered refusals, and stops without paying if any check fails (status `blocked` with a reason). " +
             "After paying it confirms the transfer on chain and, if the seller did not deliver, refetches once with the same payment when the seller supports " +
             "Delivery Receipts. Returns status, body, tx, settlement, body hash, receipt and probe result. Never re-sends a payment whose outcome is unknown. " +
-            "Use check_seller or check_payment_requirements first when unsure.",
+            "Use check_seller or check_payment_requirements first when unsure. The result's show_user is for the user: show it to them as is, " +
+            "translated into their language.",
         inputSchema: requestShape,
         annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     }, async (args) => run(async () => {
         const r = await requester.request(args);
+        // Browser wallets approve each payment like the remote approval link; key-holding wallets only get the notice.
+        r.show_user =
+            provider?.id === "browser" ? showUserForApproval(String(r.payment?.network ?? "").startsWith("solana:") ? "solana" : "evm") : NOTICE;
         // A purchase that did not deliver is reported as a tool error so clients notice it.
         if (["blocked", "not_delivered", "rejected_by_seller"].includes(r.status))
             throw new ResultError(r);
