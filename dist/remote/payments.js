@@ -7,7 +7,8 @@ import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serialize
 import { CHAINS, formatMicros } from "../chains.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
-import { activeRefusals, NET_REFUSAL_TTL_MS } from "../safe/netfail.js";
+import { activeFeePayerRefusals, activeRefusals, FEE_PAYER_REFUSAL_TTL_MS, NET_REFUSAL_TTL_MS, } from "../safe/netfail.js";
+import { offerChangedDetail } from "../x402/explain.js";
 import { describeRequirement } from "../x402/parse.js";
 import { PaymentError, X402Requester } from "../x402/request.js";
 import { configFor } from "./params.js";
@@ -46,6 +47,7 @@ const K = {
     sent: (id) => `ap:t:${id}`,
     spent: (addr) => `ap:s:${addr}`,
     refusals: (host) => `ap:n:${host}`,
+    feePayerRefusals: () => "ap:f",
 };
 // bigint-safe JSON (a selected requirement carries priceMicros as bigint)
 const toJson = (v) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? { $big: x.toString() } : x));
@@ -95,6 +97,14 @@ export async function requesterFor(params, deps) {
         loadConfig: async () => configFor(params),
         log,
         netFailures: netFailuresIn(deps.store),
+        feePayerRefusals: {
+            read: async () => (await deps.store.get(K.feePayerRefusals())) ?? [],
+            record: async (feePayer, reason, host) => {
+                const list = activeFeePayerRefusals((await deps.store.get(K.feePayerRefusals())) ?? []).filter((r) => r.feePayer !== feePayer);
+                list.push({ ts: new Date().toISOString(), feePayer, reason, host });
+                await deps.store.set(K.feePayerRefusals(), list, FEE_PAYER_REFUSAL_TTL_MS / 1000);
+            },
+        },
         sellerTimeoutMs: SELLER_TIMEOUT_MS,
         // Kept short so the seller's answer plus this search fit in one request; get_x402_result checks again later.
         findOptions: { attempts: 6, intervalMs: 5000 },
@@ -173,7 +183,8 @@ export async function requestPayment(params, input, origin, deps) {
             (solana
                 ? "Show the user approve_url as a link (and phantom_app_url for approving on a phone in the Phantom app). "
                 : "Show the user approve_url as a link to open in a browser with Rabby or MetaMask. ") +
-            "The link expires in 5 minutes. After the user says they approved or rejected, call get_x402_result with request_id.",
+            "The link expires in 5 minutes. If Phantom says the request could not be simulated, the user can cancel: nothing is paid. " +
+            "After the user says they approved or rejected, call get_x402_result with request_id.",
     }));
 }
 // ------------------------------------------------------------------ get_x402_result
@@ -294,12 +305,21 @@ export async function buildPayment(id, token, deps, payerFromPage) {
         throw new FlowError("払う前の確認で止まりました。支払いはしていません。Claude に戻って結果を確かめてください。", 409);
     }
     const sel = prep.selected;
-    const changed = ["network", "amount", "payTo", "asset"]
+    const offer_changed = ["network", "amount", "payTo", "asset"]
         .filter((k) => sel[k] !== rec[k])
-        .map((k) => `${k}: ${rec[k]} → ${sel[k]}`);
-    if (changed.length) {
-        console.log(`[agentpay402] seller's terms changed for ${id}: ${changed.join(", ")}`);
-        throw new FlowError(`売り手の請求が、画面の内容から変わりました（${changed.join("、")}）。支払いはしていません。`, 409);
+        .map((k) => ({ field: k, before: String(rec[k] ?? ""), after: String(sel[k] ?? "") }));
+    if (offer_changed.length) {
+        console.log(`[agentpay402] seller's terms changed for ${id}: ${JSON.stringify(offer_changed)}`);
+        await finishWith(rec, {
+            url: rec.input.url,
+            status: "blocked",
+            blocked_reason: "offer_changed",
+            offer_changed,
+            detail: offerChangedDetail(offer_changed),
+            paid: false,
+            message: "The seller's payment terms changed before the wallet signed. Nothing was paid.",
+        }, deps);
+        throw new FlowError("売り手の請求が、画面の内容から変わりました。支払いはしていません。", 409);
     }
     const built = await buildUnsigned(prep, rec.payer);
     const record = { family: built.family, prep: toJson(prep), payload: toJson(built.payload), builtAt: Date.now() };

@@ -417,7 +417,7 @@ ${APPROVAL_CSS}</style></head><body>
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>
 <dl class="rows">
 <div class="r"><dt>支払い先</dt><dd id="to"></dd></div>
-<div class="r"><dt>払う財布</dt><dd id="from"></dd></div>
+<div class="r"><dt>払うウォレット</dt><dd id="from"></dd></div>
 <div class="r"><dt>API</dt><dd id="url"></dd></div>
 </dl>
 <p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>

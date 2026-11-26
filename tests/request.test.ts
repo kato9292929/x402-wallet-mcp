@@ -105,6 +105,8 @@ function setup(opts: {
     bazaarPrice: async () => (opts.bazaar === undefined ? null : opts.bazaar),
     findPayment: opts.chain === "skip" ? undefined : findPayment,
     netFailuresFile,
+    feePayerRefusalsFile: path.join(dir, "fee-payer-refusals.jsonl"),
+    checkPayTo: async () => ({ exists: true }),
     log,
     report,
     ...opts.deps,
@@ -428,5 +430,109 @@ describe("limits never leak their values", () => {
       }
     }
     expect(BASE).toBe("eip155:8453");
+  });
+});
+
+describe("facilitators that refuse browser-wallet (Phantom) transactions, and payTo's receiving account", async () => {
+  const web3 = await import("@solana/web3.js");
+  const { WALLET_INCOMPATIBLE_FEE_PAYERS } = await import("../src/safe/netfail.js");
+  const BENR = "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP";
+  expect(WALLET_INCOMPATIBLE_FEE_PAYERS[BENR]).toBeTruthy();
+  const solPayTo = web3.Keypair.generate().publicKey.toBase58();
+  const solReq = (feePayer: string) => ({ ...exactReq("1000", SOLANA_DEVNET, { feePayer }), payTo: solPayTo });
+  const browser: WalletProvider = { ...provider, id: "browser" };
+
+  it("a browser wallet avoids a listed facilitator; with no other option it is blocked with a detail", async () => {
+    const { requester, createExactPayment } = setup({ seller: [res402([solReq(BENR)])], deps: { provider: browser } });
+    const r = await requester.request({ url: URL_ });
+    expect(r).toMatchObject({ status: "blocked", blocked_reason: "facilitator_incompatible", paid: false });
+    expect(r.detail).toMatch(/Phantom/);
+    expect(r.detail).toMatch(/allow_incompatible_facilitator/);
+    expect(createExactPayment).not.toHaveBeenCalled();
+  });
+
+  it("the same seller's Base option is chosen instead", async () => {
+    const { requester } = setup({ seller: [res402([solReq(BENR), exactReq("1000", BASE_SEPOLIA)])], deps: { provider: browser } });
+    const c: any = await requester.checkSeller({ url: URL_ });
+    expect(c.would_pay.network).toBe(BASE_SEPOLIA);
+    expect(c.facilitators_avoided).toMatchObject([{ network: SOLANA_DEVNET, feePayer: BENR }]);
+    expect(c.would_block).toBeNull();
+  });
+
+  it("signers that do not rewrite the transaction, and allow_incompatible_facilitator, do not avoid it", async () => {
+    const a = setup({ seller: [res402([solReq(BENR)])] }); // cdp
+    expect(((await a.requester.checkSeller({ url: URL_ })) as any).would_pay.network).toBe(SOLANA_DEVNET);
+    const b = setup({ seller: [res402([solReq(BENR)])], deps: { provider: browser } });
+    expect(((await b.requester.checkSeller({ url: URL_, allowIncompatibleFacilitator: true })) as any).would_pay.network).toBe(SOLANA_DEVNET);
+  });
+
+  it("learns a facilitator that refused with fee_payer_transferring_funds, avoids it for 7 days, and explains the refusal", async () => {
+    const fresh = web3.Keypair.generate().publicKey.toBase58();
+    const first = setup({
+      seller: [res402([solReq(fresh)]), res402([solReq(fresh)], { error: "fee_payer_transferring_funds" })],
+      deps: { provider: browser },
+    });
+    const r = await first.requester.request({ url: URL_ });
+    expect(r).toMatchObject({ status: "rejected_by_seller", refusal_reason: "fee_payer_transferring_funds", paid: false });
+    expect(r.detail).toMatch(/Phantom adds safety-check/);
+    expect(r.detail).toMatch(/avoided for 7 days/);
+    // A later check with the same memory avoids it.
+    const fpFile = path.join(path.dirname(first.netFailuresFile), "fee-payer-refusals.jsonl");
+    const later = setup({ seller: [res402([solReq(fresh)])], deps: { provider: browser, feePayerRefusalsFile: fpFile } });
+    const c: any = await later.requester.checkSeller({ url: URL_ });
+    expect(c.would_block).toMatchObject({ blocked_reason: "facilitator_incompatible" });
+  });
+
+  it("blocks when payTo has no receiving account; proceeds with a warning when the RPC cannot tell", async () => {
+    const missing = setup({
+      seller: [res402([solReq(web3.Keypair.generate().publicKey.toBase58())])],
+      deps: { checkPayTo: async () => ({ exists: false, ata: "Ata111", tokenProgram: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" }) },
+    });
+    const r = await missing.requester.request({ url: URL_ });
+    expect(r).toMatchObject({ status: "blocked", blocked_reason: "payto_account_missing", paid: false });
+    expect(r.detail).toMatch(/seller's setup/);
+    expect(missing.createExactPayment).not.toHaveBeenCalled();
+
+    const unknown = setup({
+      seller: [res402([solReq(web3.Keypair.generate().publicKey.toBase58())])],
+      deps: { checkPayTo: async () => ({ exists: null, error: "all RPCs failed" }) },
+    });
+    const prep: any = await unknown.requester.prepare({ url: URL_ });
+    expect(prep.kind).toBe("ready");
+    expect(prep.warnings.join(" ")).toMatch(/Could not confirm/);
+  });
+
+  it("finds the receiving account with the mint's token program (Token / Token-2022)", async () => {
+    const { checkPayToAccount, TOKEN_PROGRAM, TOKEN_2022_PROGRAM, ATA_PROGRAM } = await import("../src/safe/payto.js");
+    const owner = web3.Keypair.generate().publicKey;
+    const mint = web3.Keypair.generate().publicKey;
+    const expected = (program: string) =>
+      web3.PublicKey.findProgramAddressSync([owner.toBuffer(), new web3.PublicKey(program).toBuffer(), mint.toBuffer()], new web3.PublicKey(ATA_PROGRAM))[0].toBase58();
+    for (const program of [TOKEN_PROGRAM, TOKEN_2022_PROGRAM]) {
+      const asked: string[] = [];
+      const rpc: any = async (_n: string, _m: string, params: any[]) => {
+        asked.push(params[0]);
+        return { rpc: "test", result: { value: params[0] === mint.toBase58() ? { owner: program } : null } };
+      };
+      const r = await checkPayToAccount(SOLANA_DEVNET, owner.toBase58(), mint.toBase58(), rpc);
+      expect(r).toMatchObject({ exists: false, ata: expected(program), tokenProgram: program });
+      expect(asked).toEqual([mint.toBase58(), expected(program)]);
+    }
+    const down: any = async () => {
+      throw new Error("all RPCs failed");
+    };
+    expect(await checkPayToAccount(SOLANA_DEVNET, owner.toBase58(), mint.toBase58(), down)).toMatchObject({ exists: null });
+  });
+});
+
+describe("refusal details", async () => {
+  const { refusalDetail } = await import("../src/x402/explain.js");
+  it("says whose side, whether money moved and what to do", () => {
+    const down = refusalDetail({ reason: "upstream_unavailable", httpStatus: 503, settlement: "not_found", network: SOLANA_DEVNET });
+    expect(down).toMatch(/Problem side: the seller/);
+    expect(down).toMatch(/no transfer was found on chain \(checked\)/);
+    const bh = refusalDetail({ reason: "invalid_exact_svm_transaction_simulation_failed: BlockhashNotFound", httpStatus: 402, settlement: "not_checked", network: SOLANA_DEVNET });
+    expect(bh).toMatch(/new approval link/);
+    expect(refusalDetail({ reason: "", httpStatus: 402, settlement: "not_checked", network: BASE_SEPOLIA })).toMatch(/without giving a reason/);
   });
 });

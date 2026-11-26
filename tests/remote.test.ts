@@ -52,6 +52,7 @@ function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Resp
       bazaarPrice: async () => null,
       findPayment: async () => ({ settlement: "verified", tx: TX, transferred: 5000n, headerTxMatched: true, ...opts.chain }),
       sellerTimeoutMs: 50,
+      checkPayTo: async () => ({ exists: true }),
     },
   };
   const params = parseParams(new URL(`${ORIGIN}/api/mcp?base=${owner.address}&network=testnet`));
@@ -220,7 +221,10 @@ describe("remote: approval flow (Base)", () => {
     const { deps, params } = setup({ accepts });
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     accepts[0] = exactReq("6000", BASE_SEPOLIA);
-    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps)).rejects.toThrow("amount: 5000 → 6000");
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps)).rejects.toThrow("売り手の請求が、画面の内容から変わりました。支払いはしていません。");
+    const res: any = await getResult(r.request_id, deps);
+    expect(res).toMatchObject({ status: "blocked", blocked_reason: "offer_changed", paid: false, offer_changed: [{ field: "amount", before: "5000", after: "6000" }] });
+    expect(res.detail).toMatch(/amount 5000 → 6000/);
   });
 
   it("limits how many payments can wait for approval", async () => {

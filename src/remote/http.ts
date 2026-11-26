@@ -42,17 +42,26 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
       description:
         "Starts a payment for an x402 API and returns an approval link. Nothing is paid until the user opens the link and signs in their own " +
         "wallet (Phantom on Solana, Rabby / MetaMask on Base). First it runs every pre-payment check: the owner's per-payment and 24-hour " +
-        "limits, the seller's Seller Probe record, required input, the Bazaar price and networks the seller refused recently; if one fails it " +
-        "returns status `blocked` with the reason and no link. Otherwise it returns approve_url, payment.chain and payment.sign_with (the " +
+        "limits, the seller's Seller Probe record, required input, the Bazaar price, networks the seller refused recently, a Solana " +
+        "facilitator known to refuse Phantom-signed transactions (facilitator_incompatible) and whether the seller's Solana address can " +
+        "receive the token (payto_account_missing); if one fails it returns status `blocked` with the reason, a `detail` to explain to the " +
+        "user (what happened, whose side, what to do next) and no link. Otherwise it returns approve_url, payment.chain and payment.sign_with (the " +
         "wallet to sign in), phantom_app_url for Solana (to approve on a phone in the Phantom app), request_id and expires_at (5 minutes). " +
         "Any connection pays on Solana and Base. Show approve_url to the user as a link, then call get_x402_result with request_id " +
         "after the user says they approved. THIS LEADS TO SPENDING MONEY once the user signs.",
-      inputSchema: requestShape,
+      inputSchema: {
+        ...requestShape,
+        allow_incompatible_facilitator: z
+          .boolean()
+          .optional()
+          .describe("Default false. true pays even through a Solana facilitator known to refuse Phantom-signed transactions (for testing it)."),
+      },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async (args: any) =>
+    async ({ allow_incompatible_facilitator, ...args }: any) =>
       run(async () => {
-        const r = await requestPayment(params, args, origin, d);
+        const input = allow_incompatible_facilitator ? { ...args, allowIncompatibleFacilitator: true } : args;
+        const r = await requestPayment(params, input, origin, d);
         if (r?.status === "blocked") throw new ResultError(r);
         return r;
       }),
