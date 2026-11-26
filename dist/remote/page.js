@@ -8,7 +8,7 @@ const SOLANA_WEB3 = {
 };
 const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export function messagePage(title, text) {
-    return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgentPay</title>${APPROVAL_FONTS}<style>${APPROVAL_CSS}</style></head><body><main class="card">
 <div class="brand">AgentPay</div><p class="lead" style="font-size:16px;color:var(--ink);margin-top:24px">${esc(title)}</p>
 <p class="lead">${esc(text)}</p></main></body></html>`;
@@ -27,7 +27,6 @@ export function approvalPage(rec, origin) {
         amount: rec.priceUsd,
         to: rec.payTo,
         chainName: chain.name,
-        walletName: family === "solana" ? "Phantom" : "Rabby / MetaMask",
         chainId,
         chainParams: chainId ? (CHAIN_PARAMS[chainId] ?? null) : null,
         testnet: chain.testnet,
@@ -36,9 +35,9 @@ export function approvalPage(rec, origin) {
     };
     const json = JSON.stringify(d).replace(/</g, "\\u003c");
     return `<!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>AgentPay 支払いの承認</title>
+<title>AgentPay — approve a payment</title>
 ${APPROVAL_FONTS}
 <style>${APPROVAL_CSS}
 #approve{flex:2}
@@ -48,30 +47,29 @@ ${APPROVAL_FONTS}
 <main class="card">
 <div class="brand">AgentPay</div>
 <div class="site"><span class="host" id="host"></span></div>
-<p class="lead">Claude がこの API に支払おうとしています</p>
+<p class="lead">Claude wants to pay for this API</p>
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>
 <dl class="rows">
-<div class="r"><dt>支払い先</dt><dd id="to"></dd></div>
-<div class="r"><dt>払うウォレット</dt><dd id="from"></dd></div>
+<div class="r"><dt>Pay to</dt><dd id="to"></dd></div>
+<div class="r"><dt>From</dt><dd id="from"></dd></div>
 <div class="r"><dt>API</dt><dd id="url"></dd></div>
 </dl>
-<p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>
-<div class="btns"><button id="reject">拒否</button><button id="approve">ウォレットで署名する</button></div>
+<p id="testnet" class="warn" hidden>Testnet: no real money moves.</p>
+<div class="btns"><button id="reject">Reject</button><button id="approve">Sign</button></div>
 <p id="msg"></p>
-<a id="applink" class="applink" hidden>スマホの方：Phantom アプリで開く</a>
+<a id="applink" class="applink" hidden>On a phone: open in the Phantom app</a>
 </main>
 ${family === "solana" ? `<script src="${SOLANA_WEB3.src}" integrity="${SOLANA_WEB3.integrity}" crossorigin="anonymous"></script>` : ""}
 <script>
 const d = ${json};
 const $ = (id) => document.getElementById(id);
-const short = (a) => (a && a.length > 16 ? a.slice(0, 6) + "…" + a.slice(-6) : a || "不明");
+const short = (a) => (a && a.length > 16 ? a.slice(0, 6) + "…" + a.slice(-6) : a || "unknown");
 const setFull = (id, text, full) => { $(id).textContent = text; if (full) $(id).title = full; };
 $("host").textContent = new URL(d.url).host;
 $("amount").textContent = d.amount + " USDC";
-$("chain").textContent = d.chainName + " で支払い（" + d.walletName + " で署名）";
-$("approve").textContent = d.walletName + " で署名";
+$("chain").textContent = "on " + d.chainName;
 setFull("to", short(d.to), d.to);
-setFull("from", d.address ? short(d.address) : "承認するときに選ぶウォレット", d.address);
+setFull("from", d.address ? short(d.address) : "The wallet you connect", d.address);
 setFull("url", new URL(d.url).pathname, d.url);
 $("testnet").hidden = !d.testnet;
 const sol = (window.phantom && window.phantom.solana) || window.solana;
@@ -81,7 +79,7 @@ const finish = (t, cls = "ok") => { msg(t, cls); $("approve").disabled = $("reje
 async function post(action, body = {}) {
   const r = await fetch("/api/approve/" + d.id + "/" + action, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: d.token, ...body }) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "エラーが起きました。");
+  if (!r.ok) throw new Error(j.error || "Something went wrong.");
   return j;
 }
 function b58(bytes) {
@@ -92,16 +90,16 @@ function b58(bytes) {
   return s;
 }
 async function connectSolana() {
-  if (!sol) throw new Error(d.phantom ? "Phantom が見つかりません。スマホなら下のリンクから Phantom アプリで開いてください。" : "Phantom が見つかりません。");
+  if (!sol) throw new Error(d.phantom ? "Phantom was not found. On a phone, open this page in the Phantom app with the link below." : "Phantom was not found.");
   const { publicKey } = await sol.connect();
   const me = publicKey.toString();
-  if (d.address && me !== d.address) throw new Error("Phantom で " + d.address + " を選んでから、もう一度押してください。");
+  if (d.address && me !== d.address) throw new Error("Select " + d.address + " in Phantom, then press Sign again.");
   d.address = me; setFull("from", short(me), me);
   return async (req) => {
     const tx = solanaWeb3.VersionedTransaction.deserialize(Uint8Array.from(atob(req.wireTx), (c) => c.charCodeAt(0)));
     const signed = await sol.signTransaction(tx);
     const i = signed.message.staticAccountKeys.findIndex((k) => k.toString() === d.address);
-    if (i < 0 || !signed.signatures[i]) throw new Error("署名が見つかりません。");
+    if (i < 0 || !signed.signatures[i]) throw new Error("The signature was not found.");
     // Phantom may add its Lighthouse safety instructions; the server checks what changed.
     let bin = ""; for (const x of signed.serialize()) bin += String.fromCharCode(x);
     return { signature: b58(signed.signatures[i]), signedTx: btoa(bin) };
@@ -109,10 +107,10 @@ async function connectSolana() {
 }
 async function connectEvm() {
   const eth = window.ethereum;
-  if (!eth) throw new Error("ブラウザのウォレット（Rabby、MetaMask など）が見つかりません。");
+  if (!eth) throw new Error("No browser wallet (Rabby, MetaMask, …) was found.");
   const accounts = await eth.request({ method: "eth_requestAccounts" });
   const acct = d.address ? accounts.find((a) => a.toLowerCase() === d.address.toLowerCase()) : accounts[0];
-  if (!acct) throw new Error("ウォレットで " + d.address + " を選んでから、もう一度押してください。");
+  if (!acct) throw new Error("Select " + d.address + " in your wallet, then press Sign again.");
   d.address = acct; setFull("from", short(acct), acct);
   const hex = "0x" + d.chainId.toString(16);
   try { await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] }); }
@@ -123,26 +121,26 @@ async function connectEvm() {
   return async (req) => ({ signature: await eth.request({ method: "eth_signTypedData_v4", params: [acct, req.typedData] }) });
 }
 $("reject").onclick = async () => {
-  try { await post("reject"); finish("拒否しました。支払いはしていません。Claude に戻ってください。", ""); }
+  try { await post("reject"); finish("Rejected. Nothing was paid. Go back to Claude.", ""); }
   catch (e) { msg(e.message, "err"); }
 };
 $("approve").onclick = async () => {
   $("approve").disabled = true;
   try {
-    msg("ウォレットを確認しています…");
+    msg("Checking your wallet…");
     const sign = d.family === "solana" ? await connectSolana() : await connectEvm();
-    msg("支払いを用意しています…");
+    msg("Preparing the payment…");
     const req = await post("build", { payer: d.address });
-    msg("ウォレットで承認してください…");
+    msg("Approve it in your wallet…");
     const signed = await sign(req);
-    msg("支払っています…");
+    msg("Paying…");
     const r = await post("sign", signed);
-    if (r.status === "fulfilled" || r.status === "recovered_by_retry") finish("支払いました。Claude に戻って「承認した」と伝えてください。");
-    else if (r.status === "processing") finish("送りました。売り手の応答がないので、結果はあとで確かめます。Claude に戻って「承認した」と伝えてください。", "");
-    else finish("結果：" + r.status + (r.seller_error ? "（" + r.seller_error + "）" : "") + (r.wallet_changes ? "｜" + r.wallet_changes : "") + (r.signed_transaction_shape ? "｜" + r.signed_transaction_shape : "") + "。Claude に戻って「承認した」と伝えてください。", r.paid === false ? "" : "err");
+    if (r.status === "fulfilled" || r.status === "recovered_by_retry") finish("Paid. Go back to Claude and say you approved.");
+    else if (r.status === "processing") finish("Sent. The seller has not answered yet, so the result will be checked later. Go back to Claude and say you approved.", "");
+    else finish("Result: " + r.status + (r.refusal_reason || r.seller_error ? " (" + (r.refusal_reason || r.seller_error) + ")" : "") + (r.wallet_changes ? " · " + r.wallet_changes : "") + ". Go back to Claude and say you approved.", r.paid === false ? "" : "err");
   } catch (e) {
     $("approve").disabled = false;
-    msg("署名されませんでした：" + (e && e.message ? e.message : e), "err");
+    msg("Not signed: " + (e && e.message ? e.message : e), "err");
   }
 };
 </script></body></html>`;

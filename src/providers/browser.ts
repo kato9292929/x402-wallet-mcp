@@ -465,7 +465,9 @@ max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btns{display:flex;gap:10px;margin-top:20px}
 button{flex:1;font:inherit;font-size:16px;font-weight:500;padding:13px;border-radius:10px;cursor:pointer;transition:background .2s,opacity .2s,border-color .2s}
 #reject{background:transparent;color:var(--ink);border:1px solid var(--line)}#reject:hover{border-color:rgba(255,255,255,.3)}
-#approve{background:var(--ink);color:var(--bg);border:1px solid var(--ink)}#approve:hover{background:#fff}
+#approve{color:#151517;border:0;font-weight:600;letter-spacing:.01em;
+background-image:linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff);transition:filter .2s,opacity .2s}
+#approve:hover{filter:brightness(1.08)}
 button:disabled{opacity:.4;cursor:default}
 #msg{min-height:20px;margin:14px 0 0;text-align:center;font-size:14px;line-height:1.6;color:var(--muted)}
 #msg.ok{color:var(--ok)}#msg.err{color:var(--err)}

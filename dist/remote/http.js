@@ -91,7 +91,7 @@ export async function handleApprovePage(req, id) {
     }
     catch (err) {
         if (err instanceof FlowError)
-            return new Response(messagePage("このリンクは使えません", err.message), { status: err.status, headers: htmlHeaders });
+            return new Response(messagePage("This link cannot be used", err.message), { status: err.status, headers: htmlHeaders });
         throw err;
     }
 }
@@ -120,6 +120,6 @@ export async function handleApproveAction(req, id, action) {
         if (err instanceof PaymentError)
             return json({ error: err.message }, 502);
         console.error("[agentpay402]", err);
-        return json({ error: "エラーが起きました。" }, 500);
+        return json({ error: "Something went wrong." }, 500);
     }
 }

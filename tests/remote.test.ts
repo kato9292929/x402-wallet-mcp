@@ -135,7 +135,7 @@ describe("remote: choosing the chain (any connection URL pays on Solana and Base
     // The 24-hour limit counts what that Base wallet already paid: 0.006 + 0.006 > 0.01.
     const r2 = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     expect(r2.status).toBe("awaiting_approval"); // no wallet known yet
-    await expect(buildPayment(r2.request_id, tokenOf(r2.approve_url), deps, owner.address)).rejects.toThrow(/払う前の確認で止まりました/);
+    await expect(buildPayment(r2.request_id, tokenOf(r2.approve_url), deps, owner.address)).rejects.toThrow(/Stopped by a check before paying/);
     expect((await getResult(r2.request_id, deps)).status).toBe("blocked");
     // Another wallet has its own 24 hours.
     const r3 = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
@@ -172,7 +172,7 @@ describe("remote: approval flow (Base)", () => {
     expect(res).toMatchObject({ status: "fulfilled", paid: true, body: JSON.stringify({ ok: true }) });
 
     // The same request id is never paid again.
-    await expect(signAndPay(r.request_id, t, "0x00", deps)).rejects.toThrow(/処理が終わっています/);
+    await expect(signAndPay(r.request_id, t, "0x00", deps)).rejects.toThrow(/already been handled/);
     expect(sellerCalls.filter((c) => new Headers(c.headers).has("payment-signature"))).toHaveLength(1);
   });
 
@@ -181,14 +181,14 @@ describe("remote: approval flow (Base)", () => {
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     const t = tokenOf(r.approve_url);
     const built = await buildPayment(r.request_id, t, deps);
-    await expect(signAndPay(r.request_id, t, await signTyped(stranger, built.typedData as string), deps)).rejects.toThrow(/指定したウォレットの署名ではありません/);
+    await expect(signAndPay(r.request_id, t, await signTyped(stranger, built.typedData as string), deps)).rejects.toThrow(/not the chosen wallet.s signature/);
     expect(sellerCalls.some((c) => new Headers(c.headers).has("payment-signature"))).toBe(false);
   });
 
   it("needs the link's token", async () => {
     const { deps, params } = setup();
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
-    await expect(buildPayment(r.request_id, "wrong", deps)).rejects.toThrow(/期限が切れました/);
+    await expect(buildPayment(r.request_id, "wrong", deps)).rejects.toThrow(/has expired/);
   });
 
   it("reject ends the request without paying", async () => {
@@ -224,7 +224,7 @@ describe("remote: approval flow (Base)", () => {
     const params = parseParams(new URL(`${ORIGIN}/mcp?network=testnet`));
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     expect(r.status).toBe("awaiting_approval"); // the wallet is not known yet
-    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps, owner.address)).rejects.toThrow(/払う前の確認で止まりました/);
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps, owner.address)).rejects.toThrow(/Stopped by a check before paying/);
     const res: any = await getResult(r.request_id, deps);
     expect(res).toMatchObject({ status: "blocked", blocked_reason: "wallet_delegated", delegate: "0x" + delegate, paid: false });
     expect(res.detail).toMatch(/remove the EIP-7702 delegation/);
@@ -235,7 +235,7 @@ describe("remote: approval flow (Base)", () => {
     const { deps, params } = setup({ accepts });
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     accepts[0] = exactReq("6000", BASE_SEPOLIA);
-    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps)).rejects.toThrow("売り手の請求が、画面の内容から変わりました。支払いはしていません。");
+    await expect(buildPayment(r.request_id, tokenOf(r.approve_url), deps)).rejects.toThrow("The seller's terms changed from what is shown. Nothing was paid.");
     const res: any = await getResult(r.request_id, deps);
     expect(res).toMatchObject({ status: "blocked", blocked_reason: "offer_changed", paid: false, offer_changed: [{ field: "amount", before: "5000", after: "6000" }] });
     expect(res.detail).toMatch(/amount 5000 → 6000/);

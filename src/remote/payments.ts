@@ -288,11 +288,11 @@ export async function getResult(id: string, deps: FlowDeps) {
 // ------------------------------------------------------------------ approval page actions
 
 async function pendingFor(id: string, token: string | null, deps: FlowDeps): Promise<PendingRecord> {
-  if (!/^[0-9a-f]{32}$/.test(id) || !token) throw new FlowError("この承認リンクは正しくありません。", 404);
+  if (!/^[0-9a-f]{32}$/.test(id) || !token) throw new FlowError("This approval link is not valid.", 404);
   const p = await deps.store.get<PendingRecord>(K.pending(id));
   if (!p || p.token !== token) {
     const r = await deps.store.get<Record<string, unknown>>(K.result(id));
-    throw new FlowError(r ? "この支払いは、もう処理が終わっています。" : "この承認リンクは期限が切れました（5分）。Claude にもう一度頼んでください。", 410);
+    throw new FlowError(r ? "This payment has already been handled." : "This approval link has expired (5 minutes). Ask Claude again.", 410);
   }
   return p;
 }
@@ -313,7 +313,7 @@ async function finishWith(rec: PendingRecord, result: Record<string, unknown>, d
 
 export async function rejectPayment(id: string, token: string | null, deps: FlowDeps) {
   const rec = await pendingFor(id, token, deps);
-  if (await deps.store.get(K.lock(id))) throw new FlowError("この支払いは、いま処理しています。", 409);
+  if (await deps.store.get(K.lock(id))) throw new FlowError("This payment is being processed.", 409);
   await finishWith(
     rec,
     { url: rec.input.url, status: "blocked", blocked_reason: "not_approved", paid: false, message: "The user rejected the payment. Nothing was signed or paid." },
@@ -364,15 +364,15 @@ function payerFor(rec: PendingRecord, fromPage: string | undefined): string {
   const given = (fromPage ?? "").trim();
   if (rec.payer) {
     if (given && given.toLowerCase() !== rec.payer.toLowerCase()) {
-      throw new FlowError(`この支払いは ${rec.payer} から払う設定です。ウォレットでそのアカウントを選んでください。`);
+      throw new FlowError(`This payment is set to be paid from ${rec.payer}. Select that account in your wallet.`);
     }
     return rec.payer;
   }
-  if (!given) throw new FlowError("ウォレットのアドレスが読み取れませんでした。もう一度押してください。");
+  if (!given) throw new FlowError("Could not read the wallet's address. Press again.");
   try {
     return family === "solana" ? solAddress(given) : getAddress(given);
   } catch {
-    throw new FlowError("ウォレットのアドレスが読み取れませんでした。");
+    throw new FlowError("Could not read the wallet's address.");
   }
 }
 
@@ -382,7 +382,7 @@ function paramsWithPayer(rec: PendingRecord, payer: string): RemoteParams {
 
 export async function buildPayment(id: string, token: string | null, deps: FlowDeps, payerFromPage?: string) {
   let rec = await pendingFor(id, token, deps);
-  if (await deps.store.get(K.lock(id))) throw new FlowError("この支払いは、いま処理しています。", 409);
+  if (await deps.store.get(K.lock(id))) throw new FlowError("This payment is being processed.", 409);
   const payer = payerFor(rec, payerFromPage);
   rec = { ...rec, payer, params: paramsWithPayer(rec, payer) };
 
@@ -391,7 +391,7 @@ export async function buildPayment(id: string, token: string | null, deps: FlowD
   const prep = await requester.prepare(rec.input);
   if (prep.kind === "result") {
     await finishWith(rec, prep.result, deps);
-    throw new FlowError("払う前の確認で止まりました。支払いはしていません。Claude に戻って結果を確かめてください。", 409);
+    throw new FlowError("Stopped by a check before paying. Nothing was paid. Go back to Claude to see why.", 409);
   }
   const sel = prep.selected;
   const offer_changed = (["network", "amount", "payTo", "asset"] as const)
@@ -412,18 +412,18 @@ export async function buildPayment(id: string, token: string | null, deps: FlowD
       },
       deps,
     );
-    throw new FlowError("売り手の請求が、画面の内容から変わりました。支払いはしていません。", 409);
+    throw new FlowError("The seller's terms changed from what is shown. Nothing was paid.", 409);
   }
 
   const built = await buildUnsigned(prep, rec.payer);
   const record: BuildRecord = { family: built.family, prep: toJson(prep), payload: toJson(built.payload), builtAt: Date.now() };
   let forPage: Record<string, unknown>;
   if (built.family === "solana") {
-    if (!built.messageBytes) throw new FlowError("Solana の支払いを用意できませんでした。", 500);
+    if (!built.messageBytes) throw new FlowError("Could not prepare the Solana payment.", 500);
     record.messageBytes = getBase64Decoder().decode(built.messageBytes);
     forPage = { family: "solana", wireTx: (built.payload.payload as { transaction: string }).transaction };
   } else {
-    if (!built.typedData) throw new FlowError("Base の支払いを用意できませんでした。", 500);
+    if (!built.typedData) throw new FlowError("Could not prepare the Base payment.", 500);
     record.typedData = toJson(built.typedData);
     forPage = {
       family: "evm",
@@ -621,17 +621,17 @@ async function attachSignature(b: BuildRecord, payer: string, signature: string,
     try {
       sig = new Uint8Array(getBase58Encoder().encode(signature));
     } catch {
-      throw new FlowError("ウォレットの署名を読めませんでした。支払いはしていません。");
+      throw new FlowError("Could not read the wallet's signature. Nothing was paid.");
     }
     const built = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(payload.payload.transaction)));
-    if (getBase64Decoder().decode(built.messageBytes) !== b.messageBytes) throw new FlowError("用意した支払いと合いません。支払いはしていません。", 500);
+    if (getBase64Decoder().decode(built.messageBytes) !== b.messageBytes) throw new FlowError("This does not match the prepared payment. Nothing was paid.", 500);
     // The transaction the wallet actually signed (wallets may add their own instructions), checked by its outcome.
     let tx = built;
     if (signedTx) {
       try {
         tx = getTransactionDecoder().decode(new Uint8Array(getBase64Encoder().encode(signedTx)));
       } catch {
-        throw new FlowError("ウォレットが返した取引を読めませんでした。支払いはしていません。");
+        throw new FlowError("Could not read the transaction the wallet returned. Nothing was paid.");
       }
     }
     const changes = solanaWalletChanges(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
@@ -640,21 +640,21 @@ async function attachSignature(b: BuildRecord, payer: string, signature: string,
       const shape = describeSolanaMessage(new Uint8Array(tx.messageBytes), want!.feePayer);
       const bh = solanaBlockhashes(new Uint8Array(built.messageBytes), new Uint8Array(tx.messageBytes));
       console.log(`[agentpay402] refused signed payment: ${problem} | ${changes} | blockhash ${bh.built} → ${bh.signed} | ${shape}`);
-      throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${changes}｜${shape}）。支払いはしていません。`);
+      throw new FlowError(`The signed transaction does not match the payment shown (${problem} | ${changes} | ${shape}). Nothing was paid.`);
     }
     if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
-      throw new FlowError("この支払いに対する、指定したウォレットの署名ではありません。支払いはしていません。");
+      throw new FlowError("This is not the chosen wallet's signature for this payment. Nothing was paid.");
     }
     const signers: Record<string, unknown> = {};
     for (const k of Object.keys(tx.signatures)) signers[k] = k === payer ? sig : null;
     payload.payload.transaction = getBase64Decoder().decode(getTransactionEncoder().encode({ ...tx, signatures: signers } as any));
   } else {
-    if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new FlowError("ウォレットの署名を読めませんでした。支払いはしていません。");
+    if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new FlowError("Could not read the wallet's signature. Nothing was paid.");
     signature = normalizeEvmSignature(signature);
     const td = fromJson<any>(b.typedData!);
     const recovered = await recoverTypedDataAddress({ ...td, signature: signature as `0x${string}` });
     if (getAddress(recovered) !== getAddress(payer)) {
-      throw new FlowError("指定したウォレットの署名ではありません。支払いはしていません。");
+      throw new FlowError("This is not the chosen wallet's signature. Nothing was paid.");
     }
     payload.payload.signature = signature;
   }
@@ -665,7 +665,7 @@ export async function signAndPay(id: string, token: string | null, signature: st
   const signedAt = Date.now();
   const rec = await pendingFor(id, token, deps);
   const b = await deps.store.get<BuildRecord>(K.build(id));
-  if (!b) throw new FlowError("支払いの用意が済んでいないか、時間が経ちすぎました。もう一度押してください。", 409);
+  if (!b) throw new FlowError("The payment is not prepared, or too much time has passed. Press again.", 409);
   const prepForCheck = fromJson<Prepared>(b.prep);
   const extra = (prepForCheck.selected.raw as { extra?: { feePayer?: string; memo?: string } }).extra ?? {};
   const want: SolanaPaymentExpectation | undefined =
@@ -675,7 +675,7 @@ export async function signAndPay(id: string, token: string | null, signature: st
   const payment = await attachSignature(b, rec.payer, signature, signedTx, want);
 
   // At most once per request id, from here on.
-  if (!(await deps.store.setIfAbsent(K.lock(id), Date.now(), LOCK_TTL_S))) throw new FlowError("この支払いは、いま処理しています。", 409);
+  if (!(await deps.store.setIfAbsent(K.lock(id), Date.now(), LOCK_TTL_S))) throw new FlowError("This payment is being processed.", 409);
   const prep = fromJson<Prepared>(b.prep);
   const requester = await requesterFor(rec.params, deps);
   let result: Record<string, any>;

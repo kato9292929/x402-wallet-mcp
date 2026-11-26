@@ -117,7 +117,7 @@ export async function handleApprovePage(req: Request, id: string): Promise<Respo
     const rec = await pageRecord(id, url.searchParams.get("t"), await deps());
     return new Response(approvalPage(rec, getPublicOrigin(req)), { headers: htmlHeaders });
   } catch (err) {
-    if (err instanceof FlowError) return new Response(messagePage("このリンクは使えません", err.message), { status: err.status, headers: htmlHeaders });
+    if (err instanceof FlowError) return new Response(messagePage("This link cannot be used", err.message), { status: err.status, headers: htmlHeaders });
     throw err;
   }
 }
@@ -141,6 +141,6 @@ export async function handleApproveAction(req: Request, id: string, action: stri
     if (err instanceof FlowError) return json({ error: err.message }, err.status);
     if (err instanceof PaymentError) return json({ error: err.message }, 502);
     console.error("[agentpay402]", err);
-    return json({ error: "エラーが起きました。" }, 500);
+    return json({ error: "Something went wrong." }, 500);
   }
 }
