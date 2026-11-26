@@ -97,6 +97,11 @@ What `make_x402_request` does, in order:
 
 The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or `rejected_by_seller`, with the transaction, a hash of the body and the receipt.
 
+### Approval links (the connector at agentpay.x402jp.com/mcp)
+
+- One wallet can have at most **20** approval links waiting at once. Each link expires in 5 minutes, nothing is paid unless it is signed, and the per-payment and 24-hour limits are checked again when it is signed, so this number only caps how many links are open. 20 is enough to test a batch of APIs in one go. An expired, rejected or finished link frees its place at once.
+- After a payment is signed and sent, AgentPay waits up to 45 seconds for the seller's answer. If none comes, the outcome is settled from the chain: `not_delivered` (paid) when the transfer landed, or `no_response` (nothing paid) once the payment can no longer land: after the EIP-3009 `validBefore` on Base, or 3 minutes after it was built on Solana (its blockhash has expired by then). Until then `get_x402_result` returns `processing`.
+
 ## Privacy Policy
 
 This plugin runs on your computer. It has no server of its own, collects no analytics and sends no telemetry.

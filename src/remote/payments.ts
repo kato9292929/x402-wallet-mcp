@@ -17,6 +17,7 @@ import {
 import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serializeTypedData } from "viem";
 import { CHAINS, formatMicros } from "../chains.js";
 import { SpendGuard } from "../limits.js";
+import { findPayment as defaultFindPayment, payerKeyOf, type ChainResult, type PayerKey } from "../safe/chain.js";
 import { activeRefusals, NET_REFUSAL_TTL_MS, type NetRefusal } from "../safe/netfail.js";
 import { describeRequirement } from "../x402/parse.js";
 import { PaymentError, X402Requester, type ExactPayment, type HttpRequestInput, type Prepared } from "../x402/request.js";
@@ -37,7 +38,17 @@ const BUILD_TTL_S = 120;
 const RESULT_TTL_S = 1800;
 const LOCK_TTL_S = 900;
 const DAY_S = 24 * 3600;
-export const MAX_PENDING_PER_ADDRESS = 5;
+/**
+ * Approval links one wallet can have waiting at once. Each expires in 5 minutes and nothing is paid
+ * without a signature, and the per-payment / 24-hour limits are checked again when the user signs, so
+ * this only caps how many links are open (enough to test a batch of APIs in one go).
+ */
+export const MAX_PENDING_PER_ADDRESS = 20;
+/** How long to wait for the seller's answer to a paid request before settling the outcome from the chain. */
+export const SELLER_TIMEOUT_MS = 45_000;
+/** After this, a Solana payment can no longer land: its blockhash (fetched when it was built) has expired. */
+const SOLANA_LAND_WINDOW_MS = 180_000;
+const SENT_TTL_S = 24 * 3600;
 /** Without an address in the URL the wallet is chosen at approval, so pending requests share one bucket. */
 export const MAX_PENDING_UNBOUND = 100;
 
@@ -78,6 +89,7 @@ const K = {
   result: (id: string) => `ap:r:${id}`,
   lock: (id: string) => `ap:l:${id}`,
   count: (addr: string) => `ap:c:${addr}`,
+  sent: (id: string) => `ap:t:${id}`,
   spent: (addr: string) => `ap:s:${addr}`,
   refusals: (host: string) => `ap:n:${host}`,
 };
@@ -145,6 +157,9 @@ export async function requesterFor(params: RemoteParams, deps: FlowDeps): Promis
     loadConfig: async () => configFor(params),
     log,
     netFailures: netFailuresIn(deps.store),
+    sellerTimeoutMs: SELLER_TIMEOUT_MS,
+    // Kept short so the seller's answer plus this search fit in one request; get_x402_result checks again later.
+    findOptions: { attempts: 6, intervalMs: 5000 },
     ...deps.requesterOverrides,
   });
 }
@@ -168,9 +183,10 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
   const countKey = payer || "unbound";
   const max = payer ? MAX_PENDING_PER_ADDRESS : MAX_PENDING_UNBOUND;
 
-  const n = await deps.store.incr(K.count(countKey), 1, PENDING_TTL_S);
-  if (n > max) {
-    await deps.store.incr(K.count(countKey), -1, PENDING_TTL_S);
+  const now = Date.now();
+  // Only links that are still open count: an expired or finished one frees its place at once.
+  const open = ((await deps.store.get<{ id: string; exp: number }[]>(K.count(countKey))) ?? []).filter((e) => e.exp > now);
+  if (open.length >= max) {
     return {
       url: input.url,
       status: "blocked",
@@ -180,7 +196,6 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
     };
   }
 
-  const now = Date.now();
   const rec: PendingRecord = {
     id: hex(16),
     token: hex(16),
@@ -198,6 +213,7 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
     state: "pending",
   };
   await deps.store.set(K.pending(rec.id), rec, PENDING_TTL_S);
+  await deps.store.set(K.count(countKey), [...open, { id: rec.id, exp: rec.expiresAt }], PENDING_TTL_S);
   const approveUrl = `${origin}/approve/${rec.id}?t=${rec.token}`;
   const solana = CHAINS[sel.network]?.family === "solana";
   const signWith = solana ? "Phantom" : "Rabby / MetaMask";
@@ -236,6 +252,8 @@ export async function getResult(id: string, deps: FlowDeps) {
   if (!/^[0-9a-f]{32}$/.test(id)) return { request_id: id, status: "unknown", message: "No such request." };
   const r = await deps.store.get<Record<string, unknown>>(K.result(id));
   if (r) return { request_id: id, ...r };
+  const unresolved = await resolveSent(id, deps);
+  if (unresolved) return { request_id: id, ...unresolved };
   const p = await deps.store.get<PendingRecord>(K.pending(id));
   if (p) {
     return {
@@ -269,7 +287,10 @@ async function finishWith(rec: PendingRecord, result: Record<string, unknown>, d
   await deps.store.set(K.result(rec.id), result, RESULT_TTL_S);
   await deps.store.del(K.pending(rec.id));
   await deps.store.del(K.build(rec.id));
-  await deps.store.incr(K.count(rec.countKey ?? rec.payer), -1, PENDING_TTL_S);
+  await deps.store.del(K.sent(rec.id));
+  const key = K.count(rec.countKey ?? rec.payer);
+  const open = ((await deps.store.get<{ id: string; exp: number }[]>(key)) ?? []).filter((e) => e.id !== rec.id && e.exp > Date.now());
+  await deps.store.set(key, open, PENDING_TTL_S);
 }
 
 export async function rejectPayment(id: string, token: string | null, deps: FlowDeps) {
@@ -325,15 +346,15 @@ function payerFor(rec: PendingRecord, fromPage: string | undefined): string {
   const given = (fromPage ?? "").trim();
   if (rec.payer) {
     if (given && given.toLowerCase() !== rec.payer.toLowerCase()) {
-      throw new FlowError(`この支払いは ${rec.payer} から払う設定です。ウォレットでその財布を選んでください。`);
+      throw new FlowError(`この支払いは ${rec.payer} から払う設定です。ウォレットでそのアカウントを選んでください。`);
     }
     return rec.payer;
   }
-  if (!given) throw new FlowError("ウォレットの財布が読み取れませんでした。もう一度押してください。");
+  if (!given) throw new FlowError("ウォレットのアドレスが読み取れませんでした。もう一度押してください。");
   try {
     return family === "solana" ? solAddress(given) : getAddress(given);
   } catch {
-    throw new FlowError("ウォレットの財布のアドレスが読み取れませんでした。");
+    throw new FlowError("ウォレットのアドレスが読み取れませんでした。");
   }
 }
 
@@ -587,7 +608,7 @@ async function attachSignature(b: BuildRecord, payer: string, signature: string,
       throw new FlowError(`署名された取引が、表示した支払いと合いません（${problem}｜${changes}｜${shape}）。支払いはしていません。`);
     }
     if (sig.length !== 64 || !verify(null, new Uint8Array(tx.messageBytes), ed25519Key(payer), sig)) {
-      throw new FlowError("この支払いに対する、指定した財布の署名ではありません。支払いはしていません。");
+      throw new FlowError("この支払いに対する、指定したウォレットの署名ではありません。支払いはしていません。");
     }
     const signers: Record<string, unknown> = {};
     for (const k of Object.keys(tx.signatures)) signers[k] = k === payer ? sig : null;
@@ -598,7 +619,7 @@ async function attachSignature(b: BuildRecord, payer: string, signature: string,
     const td = fromJson<any>(b.typedData!);
     const recovered = await recoverTypedDataAddress({ ...td, signature: signature as `0x${string}` });
     if (getAddress(recovered) !== getAddress(payer)) {
-      throw new FlowError("指定した財布の署名ではありません。支払いはしていません。");
+      throw new FlowError("指定したウォレットの署名ではありません。支払いはしていません。");
     }
     payload.payload.signature = signature;
   }
@@ -624,18 +645,28 @@ export async function signAndPay(id: string, token: string | null, signature: st
   const requester = await requesterFor(rec.params, deps);
   let result: Record<string, any>;
   const sentAt = Date.now();
+  // Kept until the outcome is known, so it can be settled from the chain if this request never finishes.
+  let payerKey: PayerKey | null = null;
+  try {
+    payerKey = payerKeyOf(payment.payload, prep.selected, rec.payer);
+  } catch {
+    payerKey = null;
+  }
+  const sent: SentRecord = {
+    rec,
+    payerKey: payerKey ? toJson(payerKey) : null,
+    priceMicros: String(prep.selected.priceMicros ?? 0n),
+    sentAt,
+    landBy: landDeadline(b, payment),
+  };
+  await deps.store.set(K.sent(id), sent, SENT_TTL_S);
+  let failed: Record<string, any> | null = null;
   try {
     result = await requester.payPrepared(prep, payment);
   } catch (err) {
-    // Sent, but the outcome is unknown: never re-send.
-    result = {
-      url: rec.input.url,
-      status: "not_delivered",
-      paid: null,
-      settlement: "unknown",
-      message: `${(err as Error).message}`,
-      ...(err instanceof PaymentError ? err.details : {}),
-    };
+    // Sent, but no answer (timeout or network error): never re-send; the chain decides below.
+    failed = { message: `${(err as Error).message}`, ...(err instanceof PaymentError ? err.details : {}) };
+    result = { url: rec.input.url, status: "processing", paid: null, settlement: "unknown", ...failed };
   }
   if (b.family === "evm" && b.typedData) {
     result.evm_payment = JSON.parse(JSON.stringify(evmPaymentRecord(b.typedData, payment), (_k, x) => (typeof x === "bigint" ? x.toString() : x)));
@@ -649,6 +680,21 @@ export async function signAndPay(id: string, token: string | null, signature: st
     result.signed_transaction_shape = describeSolanaMessage(signedMessageOf(payment), want.feePayer);
     result.wallet_changes = solanaWalletChanges(builtMsg, signedMessageOf(payment));
     result.blockhash = solanaBlockhashes(builtMsg, signedMessageOf(payment));
+  }
+  if (failed) {
+    const { url: _u, status: _s, paid: _p, settlement: _st, ...diagnostics } = result;
+    await deps.store.set(K.sent(id), { ...sent, diagnostics }, SENT_TTL_S);
+    result = { ...diagnostics, ...(await resolveSent(id, deps, true)) };
+    return {
+      status: result.status,
+      paid: result.paid,
+      explorer: result.tx?.explorer ?? null,
+      message: result.message,
+      wallet_changes: result.wallet_changes,
+      blockhash: result.blockhash,
+      evm_payment: result.evm_payment,
+      timing: result.timing,
+    };
   }
   if (result.paid !== false) await addSpent(deps.store, rec.payer, BigInt(prep.selected.priceMicros ?? 0n));
   await finishWith(rec, result, deps);
@@ -665,6 +711,71 @@ export async function signAndPay(id: string, token: string | null, signature: st
     refusal_reason: result.refusal_reason,
     timing: result.timing,
   };
+}
+
+interface SentRecord {
+  rec: PendingRecord;
+  /** bigint-safe JSON of the PayerKey, or null if it could not be read. */
+  payerKey: string | null;
+  priceMicros: string;
+  sentAt: number;
+  /** After this (ms), the payment can no longer land on chain. */
+  landBy: number;
+  diagnostics?: Record<string, unknown>;
+}
+
+/** When a sent payment stops being able to land: EIP-3009 validBefore, or the Solana blockhash's lifetime from when it was built. */
+function landDeadline(b: BuildRecord, payment: ExactPayment): number {
+  if (b.family === "evm") {
+    const vb = Number((payment.payload as any)?.payload?.authorization?.validBefore);
+    if (Number.isFinite(vb) && vb > 0) return vb * 1000;
+  }
+  return (b.builtAt ?? Date.now()) + SOLANA_LAND_WINDOW_MS;
+}
+
+/** The longest the sign request can run (app/api/approve route maxDuration); after it, nothing else will finish this payment. */
+const SIGN_REQUEST_MAX_MS = 120_000;
+
+/**
+ * Settles a payment that was sent but has no result (the seller never answered, or the request that sent
+ * it ended): a transfer on chain → not_delivered (paid); none and it can no longer land → no_response
+ * (not paid); otherwise still processing. `now` is true when the sending request itself is asking.
+ */
+async function resolveSent(id: string, deps: FlowDeps, now = false): Promise<Record<string, any> | null> {
+  const s = await deps.store.get<SentRecord>(K.sent(id));
+  if (!s) return null;
+  const t = Date.now();
+  const waiting = (message: string) => ({ status: "processing", paid: null, message });
+  // While the sending request may still be running, it finishes the payment itself.
+  if (!now && t - s.sentAt < SIGN_REQUEST_MAX_MS) return waiting("The payment was sent; waiting for the seller's answer.");
+  if (!(await deps.store.setIfAbsent(`ap:x:${id}`, t, 60))) return waiting("The payment's outcome is being checked.");
+  try {
+    const base = { url: s.rec.input.url, ...s.diagnostics };
+    if (!s.payerKey) {
+      const result = { ...base, status: "not_delivered", paid: null, settlement: "unknown", message: "The seller did not answer and the payment could not be looked up on chain. It was not re-sent and is counted as spent." };
+      await addSpent(deps.store, s.rec.payer, BigInt(s.priceMicros));
+      await finishWith(s.rec, result, deps);
+      return result;
+    }
+    const key = fromJson<PayerKey>(s.payerKey);
+    const find = deps.requesterOverrides?.findPayment ?? ((k: PayerKey, h: string | null) => defaultFindPayment(k, h, { attempts: 1 }));
+    const chain: ChainResult = await find(key, null);
+    if (chain.settlement === "verified") {
+      const tx = chain.tx ? { network: s.rec.network, tx: chain.tx, explorer: CHAINS[s.rec.network]?.explorerTx(chain.tx) } : null;
+      const result = { ...base, status: "not_delivered", paid: true, settlement: "verified", tx, message: "The seller did not answer, but the transfer is on chain: paid and not delivered." };
+      await addSpent(deps.store, s.rec.payer, BigInt(s.priceMicros));
+      await finishWith(s.rec, result, deps);
+      return result;
+    }
+    if (chain.settlement === "not_found" && t > s.landBy) {
+      const result = { ...base, status: "no_response", paid: false, settlement: "not_found", message: "The seller did not answer and no transfer is on chain; the payment can no longer land. Nothing was paid." };
+      await finishWith(s.rec, result, deps);
+      return result;
+    }
+    return waiting(`The seller did not answer. No transfer on chain yet; it can still land until ${new Date(s.landBy).toISOString()}. Ask again after that.`);
+  } finally {
+    await deps.store.del(`ap:x:${id}`);
+  }
 }
 
 function signedMessageOf(payment: ExactPayment): Uint8Array {

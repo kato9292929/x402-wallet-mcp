@@ -27,7 +27,7 @@ const URL_ = "https://seller.test/api";
 const ORIGIN = "https://agentpay.test";
 const TX = "0x" + "ab".repeat(32);
 
-function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Response; chain?: Partial<ChainResult> } = {}) {
+function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Response; hang?: boolean; chain?: Partial<ChainResult> } = {}) {
   const sellerCalls: RequestInit[] = [];
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -36,6 +36,10 @@ function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Resp
       sellerCalls.push(init ?? {});
       const paid = new Headers(init?.headers).has("payment-signature");
       if (!paid) return res402(opts.accepts ?? [exactReq(opts.amount ?? "5000", BASE_SEPOLIA)]);
+      if (opts.hang) {
+        // The seller never answers the paid request.
+        return new Promise<Response>((_r, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("The operation was aborted due to timeout"))));
+      }
       return opts.seller ? opts.seller() : res200({ ok: true }, { success: true, transaction: TX, network: BASE_SEPOLIA });
     }
     throw new Error(`unexpected fetch ${url}`);
@@ -47,6 +51,7 @@ function setup(opts: { amount?: string; accepts?: unknown[]; seller?: () => Resp
       probe: async () => ({ status: "unscored", host: "seller.test" }) as any,
       bazaarPrice: async () => null,
       findPayment: async () => ({ settlement: "verified", tx: TX, transferred: 5000n, headerTxMatched: true, ...opts.chain }),
+      sellerTimeoutMs: 50,
     },
   };
   const params = parseParams(new URL(`${ORIGIN}/api/mcp?base=${owner.address}&network=testnet`));
@@ -174,7 +179,7 @@ describe("remote: approval flow (Base)", () => {
     const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
     const t = tokenOf(r.approve_url);
     const built = await buildPayment(r.request_id, t, deps);
-    await expect(signAndPay(r.request_id, t, await signTyped(stranger, built.typedData as string), deps)).rejects.toThrow(/指定した財布の署名ではありません/);
+    await expect(signAndPay(r.request_id, t, await signTyped(stranger, built.typedData as string), deps)).rejects.toThrow(/指定したウォレットの署名ではありません/);
     expect(sellerCalls.some((c) => new Headers(c.headers).has("payment-signature"))).toBe(false);
   });
 
@@ -216,6 +221,58 @@ describe("remote: approval flow (Base)", () => {
       expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps)).status).toBe("awaiting_approval");
     }
     expect(await requestPayment(params, { url: URL_ }, ORIGIN, deps)).toMatchObject({ status: "blocked", blocked_reason: "too_many_pending" });
+  });
+
+  it("frees a place as soon as a link expires or is finished", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { deps, params } = setup();
+      expect(MAX_PENDING_PER_ADDRESS).toBe(20);
+      const first = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+      vi.setSystemTime(Date.now() + 60_000);
+      for (let i = 1; i < MAX_PENDING_PER_ADDRESS; i++) await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+      expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps)).status).toBe("blocked");
+      // Finishing one (rejecting it) frees its place at once.
+      await rejectPayment(first.request_id, tokenOf(first.approve_url), deps);
+      vi.setSystemTime(Date.now() + 140_000);
+      expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps)).status).toBe("awaiting_approval");
+      expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps)).status).toBe("blocked");
+      // 19 links expire (5 minutes after they were made); the newer one keeps the list alive but they no longer count.
+      vi.setSystemTime(Date.now() + 170_000);
+      expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps)).status).toBe("awaiting_approval");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("seller never answers, transfer on chain: settled as not_delivered and paid, not left processing", async () => {
+    const { deps, params } = setup({ hang: true });
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    const t = tokenOf(r.approve_url);
+    const built = await buildPayment(r.request_id, t, deps);
+    const out = await signAndPay(r.request_id, t, await signTyped(owner, built.typedData as string), deps);
+    expect(out).toMatchObject({ status: "not_delivered", paid: true });
+    expect(await getResult(r.request_id, deps)).toMatchObject({ status: "not_delivered", paid: true, settlement: "verified" });
+  });
+
+  it("seller never answers, no transfer: processing until the payment can no longer land, then no_response", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { deps, params } = setup({ hang: true, chain: { settlement: "not_found", tx: null, transferred: null, headerTxMatched: null } });
+      const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+      const t = tokenOf(r.approve_url);
+      const built = await buildPayment(r.request_id, t, deps);
+      const sig = await signTyped(owner, built.typedData as string);
+      // The fake clock does not move the timeout, which runs on real timers.
+      expect(await signAndPay(r.request_id, t, sig, deps)).toMatchObject({ status: "processing", paid: null });
+      expect((await getResult(r.request_id, deps)).status).toBe("processing");
+      const validBefore = Number(JSON.parse(built.typedData as string).message.validBefore) * 1000;
+      vi.setSystemTime(Math.max(validBefore, Date.now() + 120_000) + 1000);
+      expect(await getResult(r.request_id, deps)).toMatchObject({ status: "no_response", paid: false });
+      expect(await getResult(r.request_id, deps)).toMatchObject({ status: "no_response" }); // final
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("avoids a network only when the seller says it does not accept it", async () => {

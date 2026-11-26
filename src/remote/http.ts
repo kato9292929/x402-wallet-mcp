@@ -64,9 +64,11 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
       title: "Get x402 payment result",
       description:
         "Returns the outcome of a payment started with request_x402_payment: awaiting_approval, processing, or the final result " +
-        "(fulfilled, not_delivered, recovered_by_retry, blocked, rejected_by_seller) with the API response body, the transaction found on chain " +
-        "and the Delivery Receipt check; expired if the link was never approved. Call it after the user says they approved. A request id is " +
-        "never paid twice, so calling this again is safe. Read-only.",
+        "(fulfilled, not_delivered, recovered_by_retry, blocked, rejected_by_seller, no_response) with the API response body, the transaction found on chain " +
+        "and the Delivery Receipt check; expired if the link was never approved. When the seller never answered a sent payment, it settles the " +
+        "outcome from the chain: not_delivered if the transfer landed, no_response if it did not and can no longer land (nothing paid), " +
+        "otherwise processing. Call it after the user says they approved. A request id is never paid twice, so calling this again is safe. " +
+        "It never pays.",
       inputSchema: { request_id: z.string().describe("request_id returned by request_x402_payment") },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

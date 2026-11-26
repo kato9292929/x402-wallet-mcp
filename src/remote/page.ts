@@ -54,7 +54,7 @@ export function approvalPage(rec: PendingRecord, origin: string): string {
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>
 <dl class="rows">
 <div class="r"><dt>支払い先</dt><dd id="to"></dd></div>
-<div class="r"><dt>払う財布</dt><dd id="from"></dd></div>
+<div class="r"><dt>払うウォレット</dt><dd id="from"></dd></div>
 <div class="r"><dt>API</dt><dd id="url"></dd></div>
 </dl>
 <p id="testnet" class="warn" hidden>テストネットです。本物のお金は動きません。</p>
@@ -73,7 +73,7 @@ $("amount").textContent = d.amount + " USDC";
 $("chain").textContent = d.chainName + " で支払い（" + d.walletName + " で署名）";
 $("approve").textContent = d.walletName + " で署名する";
 setFull("to", short(d.to), d.to);
-setFull("from", d.address ? short(d.address) : "承認するときに選ぶ財布", d.address);
+setFull("from", d.address ? short(d.address) : "承認するときに選ぶウォレット", d.address);
 setFull("url", new URL(d.url).pathname, d.url);
 $("testnet").hidden = !d.testnet;
 const sol = (window.phantom && window.phantom.solana) || window.solana;
@@ -140,6 +140,7 @@ $("approve").onclick = async () => {
     msg("支払っています…");
     const r = await post("sign", signed);
     if (r.status === "fulfilled" || r.status === "recovered_by_retry") finish("支払いました。Claude に戻って「承認した」と伝えてください。");
+    else if (r.status === "processing") finish("送りました。売り手の応答がないので、結果はあとで確かめます。Claude に戻って「承認した」と伝えてください。", "");
     else finish("結果：" + r.status + (r.seller_error ? "（" + r.seller_error + "）" : "") + (r.wallet_changes ? "｜" + r.wallet_changes : "") + (r.signed_transaction_shape ? "｜" + r.signed_transaction_shape : "") + "。Claude に戻って「承認した」と伝えてください。", r.paid === false ? "" : "err");
   } catch (e) {
     $("approve").disabled = false;
