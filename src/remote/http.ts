@@ -60,12 +60,16 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
           .boolean()
           .optional()
           .describe("Default false. true pays even through a Solana facilitator known to refuse Phantom-signed transactions (for testing it)."),
+        network: z
+          .enum(["base", "solana"])
+          .optional()
+          .describe("Pay on this network only. Omit to let AgentPay pick the network the payment is known to go through"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ allow_incompatible_facilitator, ...args }: any) =>
+    async ({ allow_incompatible_facilitator, network, ...args }: any) =>
       run(async () => {
-        const input = allow_incompatible_facilitator ? { ...args, allowIncompatibleFacilitator: true } : args;
+        const input = { ...args, ...(allow_incompatible_facilitator ? { allowIncompatibleFacilitator: true } : {}), ...(network ? { network } : {}) };
         const r = await requestPayment(params, input, origin, d);
         if (r?.status === "blocked") throw new ResultError(r);
         return r;
@@ -100,6 +104,10 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
           .describe("Request body built from the user's request (e.g. the token or address they asked about). Omit to use the Bazaar's example"),
         query_params: z.record(z.string(), z.string()).optional().describe('Query parameters from the user\'s request, e.g. {"ticker": "AAPL"}'),
         max_price_usd: z.string().optional().describe('Highest price per request to consider, e.g. "0.02" (never above the owner\'s limit)'),
+        network: z
+          .enum(["base", "solana"])
+          .optional()
+          .describe("Pay on this network only. Omit to let AgentPay pick the network the payment is known to go through"),
         use_example: z
           .boolean()
           .optional()

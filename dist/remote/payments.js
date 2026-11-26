@@ -7,6 +7,7 @@ import { getAddress, getTypesForEIP712Domain, recoverTypedDataAddress, serialize
 import { CHAINS, formatMicros, parseUsdToMicros } from "../chains.js";
 import { decide, describeCandidate, exampleConditions, findCandidates, rankByRecord, requestFor, unmatchedWords } from "../buy.js";
 import { lookupProbe } from "../safe/probe.js";
+import { SUCCESS_TTL_MS, verifiedFamily } from "../safe/known.js";
 import { SpendGuard } from "../limits.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
 import { activeFeePayerRefusals, activeRefusals, FEE_PAYER_REFUSAL_TTL_MS, NET_REFUSAL_TTL_MS, } from "../safe/netfail.js";
@@ -51,6 +52,7 @@ const K = {
     spent: (addr) => `ap:s:${addr}`,
     refusals: (host) => `ap:n:${host}`,
     feePayerRefusals: () => "ap:f",
+    successes: () => "ap:ok",
 };
 // bigint-safe JSON (a selected requirement carries priceMicros as bigint)
 const toJson = (v) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? { $big: x.toString() } : x));
@@ -106,6 +108,17 @@ export async function requesterFor(params, deps) {
                 const list = activeFeePayerRefusals((await deps.store.get(K.feePayerRefusals())) ?? []).filter((r) => r.feePayer !== feePayer);
                 list.push({ ts: new Date().toISOString(), feePayer, reason, host });
                 await deps.store.set(K.feePayerRefusals(), list, FEE_PAYER_REFUSAL_TTL_MS / 1000);
+            },
+        },
+        successRecords: {
+            read: async () => (await deps.store.get(K.successes())) ?? [],
+            record: async (r) => {
+                const now = Date.now();
+                const list = ((await deps.store.get(K.successes())) ?? [])
+                    .filter((s) => now - Date.parse(s.ts) < SUCCESS_TTL_MS && !(s.host === r.host && s.network === r.network))
+                    .slice(-500);
+                list.push(r);
+                await deps.store.set(K.successes(), list, SUCCESS_TTL_MS / 1000);
             },
         },
         sellerTimeoutMs: SELLER_TIMEOUT_MS,
@@ -202,9 +215,14 @@ export async function buyData(params, args, origin, deps) {
     const perCall = parseUsdToMicros(params.perCallMaxUsd);
     const asked = args.max_price_usd ? parseUsdToMicros(args.max_price_usd) : perCall;
     const cap = asked < perCall ? asked : perCall;
-    const found = await findCandidates(args, new AddressWallet(params).preferredChains(), cap, deps.fetch);
-    // Equally good matches are told apart by the sellers' records (Seller Probe, then calls in the last 30 days).
-    const candidates = await rankByRecord(found, deps.requesterOverrides?.probe ?? ((url) => lookupProbe(url, deps.fetch ?? fetch, 3000)));
+    const family = args.network === "base" ? "evm" : args.network === "solana" ? "solana" : undefined;
+    const networks = new AddressWallet(params).preferredChains().filter((c) => !family || CHAINS[c]?.family === family);
+    const found = await findCandidates(args, networks, cap, deps.fetch);
+    // Equally good matches are told apart by the sellers' records: paid through AgentPay before, then calls in the
+    // last 30 days, then Seller Probe's score.
+    const learned = (await deps.store.get(K.successes())) ?? [];
+    const succeeded = (host) => verifiedFamily(host).size > 0 || learned.some((s) => s.host === host);
+    const candidates = await rankByRecord(found, deps.requesterOverrides?.probe ?? ((url) => lookupProbe(url, deps.fetch ?? fetch, 3000)), succeeded);
     if (!candidates.length) {
         return {
             status: "no_match",
@@ -250,7 +268,7 @@ export async function buyData(params, args, origin, deps) {
                 "values are only the API's sample: call buy_data with use_example: true only if the user agrees to them.",
         };
     }
-    const r = await requestPayment(params, { url: choice.url, method: choice.method, body: choice.body }, origin, deps);
+    const r = await requestPayment(params, { url: choice.url, method: choice.method, body: choice.body, ...(args.network ? { network: args.network } : {}) }, origin, deps);
     // Input the user did not give came from the API's example: the user sees those conditions before signing.
     const conditions = r.status === "awaiting_approval" ? exampleConditions(choice) : null;
     if (conditions) {

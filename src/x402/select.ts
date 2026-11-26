@@ -23,6 +23,11 @@ export interface SelectionContext {
    * such as Phantom rewrites when signing. Set only when a browser wallet signs.
    */
   avoidFeePayers?: Record<string, string>;
+  /**
+   * Order among networks of the same scheme, before price (lower first): the network a payment is known to go
+   * through comes first. Set only when a browser wallet signs.
+   */
+  networkRank?: (r: Requirement) => number;
 }
 
 /** sandbox-type keys pay testnets only, live-type keys mainnets only. */
@@ -123,6 +128,11 @@ export function selectRequirement(accepts: Requirement[], ctx: SelectionContext)
     const pa = ctx.priority.indexOf(a.scheme);
     const pb = ctx.priority.indexOf(b.scheme);
     if (pa !== pb) return pa - pb;
+    if (ctx.networkRank) {
+      const na = ctx.networkRank(a);
+      const nb = ctx.networkRank(b);
+      if (na !== nb) return na - nb;
+    }
     const ca = a.priceMicros ?? 0n;
     const cb = b.priceMicros ?? 0n;
     if (ca !== cb) return ca < cb ? -1 : 1;

@@ -91,32 +91,36 @@ export async function findCandidates(args, networks, capMicros, fetchImpl) {
     });
     return out.sort((a, b) => b.score - a.score || a.rank - b.rank);
 }
-const delivered = (c) => (c.probe === "delivered" ? 1 : 0);
 /** Seller Probe outcomes that rule a seller out: its latest paid purchase failed or was refused. */
 export const BAD_PROBE = new Set(["not_delivered", "request_rejected", "failed", "overcharged", "invalid_target"]);
+/** Order among equally good matches: paid through AgentPay before, then calls in the last 30 days, then Probe score. */
+const byRecord = (a, b) => Number(!!b.succeeded) - Number(!!a.succeeded) || b.calls30d - a.calls30d || (b.probeScore ?? -1) - (a.probeScore ?? -1);
 /**
  * Looks up Seller Probe for the five best matches and drops sellers whose latest paid purchase failed or was
- * refused (BAD_PROBE). Among equally good matches, puts first: Probe delivered, then more calls in the last
- * 30 days, then the Bazaar's order.
+ * refused (BAD_PROBE). Among equally good matches, puts first: a seller paid successfully before, then more calls
+ * in the last 30 days, then a higher Probe score, then the Bazaar's order.
  */
-export async function rankByRecord(candidates, probe) {
+export async function rankByRecord(candidates, probe, succeeded = () => false) {
     if ((candidates[0]?.score ?? 0) === 0)
         return candidates;
     const head = candidates.slice(0, 5);
     await Promise.all(head.map(async (c) => {
+        c.succeeded = succeeded(new URL(c.item.resource).hostname);
         try {
             const p = await probe(c.item.resource);
             c.probe = p.status === "scored" ? (p.verdict ?? "scored") : p.status;
+            if (p.status === "scored" && typeof p.score === "number")
+                c.probeScore = p.score;
         }
         catch {
             c.probe = "unavailable";
         }
     }));
-    return [...head.filter((c) => !BAD_PROBE.has(c.probe ?? "")), ...candidates.slice(5)].sort((a, b) => b.score - a.score || delivered(b) - delivered(a) || b.calls30d - a.calls30d || a.rank - b.rank);
+    return [...head.filter((c) => !BAD_PROBE.has(c.probe ?? "")), ...candidates.slice(5)].sort((a, b) => b.score - a.score || byRecord(a, b) || a.rank - b.rank);
 }
 /**
  * The best candidate, or null when nothing matches or the top ones cannot be told apart: the same match,
- * the same Probe record and the same number of calls in the last 30 days.
+ * no difference in payments through AgentPay, calls in the last 30 days or Probe score.
  */
 export function decide(candidates) {
     const [top, next] = candidates;
@@ -124,9 +128,7 @@ export function decide(candidates) {
         return null;
     if (!next || next.score < top.score)
         return top;
-    if (delivered(top) !== delivered(next) || top.calls30d !== next.calls30d)
-        return top;
-    return null;
+    return byRecord(top, next) < 0 ? top : null;
 }
 const desc = (p) => (p?.description ? String(p.description).slice(0, 200) : undefined);
 /**
@@ -235,5 +237,7 @@ export function describeCandidate(c) {
         method: c.item.extensions?.bazaar?.info?.input?.method,
         calls_30d: c.calls30d,
         seller_probe: c.probe,
+        probe_score: c.probeScore,
+        paid_before: c.succeeded || undefined,
     };
 }

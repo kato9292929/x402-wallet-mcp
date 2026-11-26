@@ -214,24 +214,27 @@ describe("buy_data", () => {
     expect(r.chosen).toMatchObject({ resource: "https://b.test/bitcoin/price", calls_30d: 900 });
   });
 
-  it("prefers a seller whose latest Seller Probe purchase was delivered, and drops one that was not", async () => {
-    const verdicts: Record<string, string> = { "a.test": "not_delivered", "c.test": "delivered" };
+  it("among equal matches: a seller paid before, then 30-day calls, then Probe score; refused sellers are dropped", async () => {
+    const records: Record<string, any> = {
+      "a.test": { verdict: "not_delivered", score: 90 },
+      "b.test": { verdict: "delivered", score: 40 },
+      "c.test": { verdict: "delivered", score: 80 },
+    };
     const probe = async (url: string) => {
       const host = new URL(url).hostname;
-      return verdicts[host] ? { status: "scored", host, verdict: verdicts[host] } : { status: "unscored", host };
+      return records[host] ? { status: "scored", host, ...records[host] } : { status: "unscored", host };
     };
-    const { d } = deps(
-      [
-        { ...item("https://a.test/btc-price", "Bitcoin (BTC) price", "Current BTC price", "2000"), quality: { l30DaysTotalCalls: 5000 } },
-        { ...item("https://b.test/bitcoin/price", "Bitcoin price", "BTC spot price", "2000"), quality: { l30DaysTotalCalls: 900 } },
-        { ...item("https://c.test/btc/price", "BTC price", "Bitcoin price", "2000"), quality: { l30DaysTotalCalls: 3 } },
-      ],
-      probe,
-    );
-    const r: any = await buyData(params, { query: "btc price" }, ORIGIN, d);
-    expect(r.status).toBe("awaiting_approval");
-    expect(r.chosen).toMatchObject({ resource: "https://c.test/btc/price", seller_probe: "delivered" });
-    expect(r.other_candidates.map((c: any) => c.resource)).toEqual(["https://b.test/bitcoin/price"]);
+    const btc = (host: string, calls: number) => ({ ...item(`https://${host}/btc/price`, "BTC price", "Bitcoin price", "2000"), quality: { l30DaysTotalCalls: calls } });
+    // Same calls: the higher Probe score wins; the not-delivered seller is dropped even with more calls.
+    const r1: any = await buyData(params, { query: "btc price" }, ORIGIN, deps([btc("a.test", 5000), btc("b.test", 10), btc("c.test", 10)], probe).d);
+    expect(r1.chosen).toMatchObject({ resource: "https://c.test/btc/price", probe_score: 80 });
+    expect(r1.other_candidates.map((c: any) => c.resource)).toEqual(["https://b.test/btc/price"]);
+    // More calls win over Probe score.
+    const r2: any = await buyData(params, { query: "btc price" }, ORIGIN, deps([btc("b.test", 900), btc("c.test", 10)], probe).d);
+    expect(r2.chosen.resource).toBe("https://b.test/btc/price");
+    // A seller paid through AgentPay before (built-in list: api.exa.ai) wins over everything else.
+    const r3: any = await buyData(params, { query: "btc price" }, ORIGIN, deps([btc("b.test", 900), btc("api.exa.ai", 1)], probe).d);
+    expect(r3.chosen).toMatchObject({ resource: "https://api.exa.ai/btc/price", paid_before: true });
   });
 
   it("skips endpoints over the price cap or with a path template, and says when nothing matches", async () => {

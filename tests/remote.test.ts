@@ -107,18 +107,35 @@ describe("remote: choosing the chain (any connection URL pays on Solana and Base
     expect(r.phantom_app_url).toBeUndefined();
   });
 
-  it("at the same price, picks the chain whose address is in the URL; with none, Solana", async () => {
-    const accepts = [exactReq("5000", BASE_SEPOLIA), solReq("5000")]; // Base listed first, like Agent402
-    const pick = async (q: string) => (await requestPayment(url(q), { url: URL_ }, ORIGIN, setup({ accepts }).deps)).payment;
-    expect(await pick(`solana=${sol}&`)).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
-    const solLink = await requestPayment(url(`solana=${sol}&`), { url: URL_ }, ORIGIN, setup({ accepts }).deps);
+  it("picks the network the payment is known to go through: a known Solana facilitator, else Base, else Solana", async () => {
+    const PAYAI = "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww";
+    const known = exactReq("5000", SOLANA_DEVNET, { feePayer: PAYAI });
+    const pick = async (accepts: unknown[], q = "", input: Record<string, unknown> = {}) =>
+      (await requestPayment(url(q), { url: URL_, ...input }, ORIGIN, setup({ accepts }).deps)).payment;
+    // Solana through PayAI (it has settled Phantom-signed payments) comes before Base.
+    expect(await pick([exactReq("5000", BASE_SEPOLIA), known])).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
+    const solLink = await requestPayment(url(""), { url: URL_ }, ORIGIN, setup({ accepts: [exactReq("5000", BASE_SEPOLIA), known] }).deps);
     expect(solLink.show_user).toMatch(/Phantom app link/); // Solana: the phone line
-    expect(await pick(`base=${owner.address}&`)).toMatchObject({ network: BASE_SEPOLIA, sign_with: "Rabby / MetaMask" });
-    expect(await pick("")).toMatchObject({ network: SOLANA_DEVNET, sign_with: "Phantom" });
-    // A cheaper chain still wins over the preferred one.
-    const cheaperBase = [exactReq("4000", BASE_SEPOLIA), solReq("5000")];
-    const r = await requestPayment(url(`solana=${sol}&`), { url: URL_ }, ORIGIN, setup({ accepts: cheaperBase }).deps);
-    expect(r.payment.network).toBe(BASE_SEPOLIA);
+    // A Solana facilitator not seen yet: Base, even with a Solana address in the URL and Solana cheaper.
+    expect(await pick([solReq("5000"), exactReq("5000", BASE_SEPOLIA)], `solana=${sol}&`)).toMatchObject({ network: BASE_SEPOLIA });
+    expect(await pick([solReq("4000"), exactReq("5000", BASE_SEPOLIA)])).toMatchObject({ network: BASE_SEPOLIA });
+    // Only Solana: used.
+    expect(await pick([solReq("5000")])).toMatchObject({ network: SOLANA_DEVNET });
+    // The user's choice wins.
+    expect(await pick([exactReq("5000", BASE_SEPOLIA), known], "", { network: "base" })).toMatchObject({ network: BASE_SEPOLIA });
+    expect(await pick([solReq("5000"), exactReq("5000", BASE_SEPOLIA)], "", { network: "solana" })).toMatchObject({ network: SOLANA_DEVNET });
+  });
+
+  it("prefers the network a payment to this seller went through before, and leaves out a seller's failing network", async () => {
+    const { deps } = setup({ accepts: [solReq("5000"), exactReq("5000", BASE_SEPOLIA)] });
+    const params = url("");
+    // A remembered success on Solana for this host puts Solana first.
+    const requester = await requesterFor(params, deps);
+    await (requester as any).deps.successRecords.record({ ts: new Date().toISOString(), host: "seller.test", network: SOLANA_DEVNET });
+    expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps)).payment.network).toBe(SOLANA_DEVNET);
+    // stableenrich.dev's Solana keeps failing: its Base is used.
+    const { SELLER_NETWORK_AVOID } = await import("../src/safe/known.js");
+    expect(SELLER_NETWORK_AVOID["stableenrich.dev"]).toMatchObject({ family: "solana" });
   });
 
   it("with /mcp only, a Base-only seller gets a link and the EVM wallet connected on the page pays, within its limits", async () => {

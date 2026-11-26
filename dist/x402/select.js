@@ -91,6 +91,12 @@ export function selectRequirement(accepts, ctx) {
         const pb = ctx.priority.indexOf(b.scheme);
         if (pa !== pb)
             return pa - pb;
+        if (ctx.networkRank) {
+            const na = ctx.networkRank(a);
+            const nb = ctx.networkRank(b);
+            if (na !== nb)
+                return na - nb;
+        }
         const ca = a.priceMicros ?? 0n;
         const cb = b.priceMicros ?? 0n;
         if (ca !== cb)

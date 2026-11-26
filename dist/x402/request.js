@@ -8,8 +8,9 @@ import { neverminedConfigured, neverminedEnvironment } from "../nevermined.js";
 import { buildX402Client } from "../providers/index.js";
 import { findPayment as defaultFindPayment, payerKeyOf } from "../safe/chain.js";
 import { checkInput } from "../safe/input.js";
-import { WALLET_INCOMPATIBLE_FEE_PAYERS, activeFeePayerRefusals, activeRefusals, feePayerRefusalsPath, netFailuresPath, readFeePayerRefusals, readNetFailures, recordFeePayerRefusal, recordNetFailure, refusesWalletInstructions, } from "../safe/netfail.js";
+import { WALLET_INCOMPATIBLE_FEE_PAYERS, readSuccesses, recordSuccess, successesPath, activeFeePayerRefusals, activeRefusals, feePayerRefusalsPath, netFailuresPath, readFeePayerRefusals, readNetFailures, recordFeePayerRefusal, recordNetFailure, refusesWalletInstructions, } from "../safe/netfail.js";
 import { checkPayToAccount } from "../safe/payto.js";
+import { KNOWN_GOOD_FEE_PAYERS, SUCCESS_TTL_MS, sellerNetworkAvoid, verifiedFamily, } from "../safe/known.js";
 import { rpcCall } from "../safe/rpc.js";
 import { facilitatorIncompatibleDetail, networkAvoidedDetail, payToAccountMissingDetail, refusalDetail, walletDelegatedDetail, } from "./explain.js";
 import { lookupProbe, probeHost, probeSummary, reportToProbe } from "../safe/probe.js";
@@ -125,17 +126,67 @@ export class X402Requester {
         this.loadCfg = deps.loadConfig ?? loadConfig;
         this.log = deps.log ?? defaultLog;
     }
-    selectionContext(cfg, avoidNetworks = [], avoidFeePayers = {}) {
+    selectionContext(cfg, avoidNetworks = [], avoidFeePayers = {}, policy) {
+        const chains = this.deps.provider?.chains() ?? [];
         return {
+            networkRank: policy?.networkRank,
             avoidFeePayers,
             priority: schemePriority(),
-            walletChains: this.deps.provider?.chains() ?? [],
+            walletChains: policy?.family ? chains.filter((c) => chainInfo(c)?.family === policy.family) : chains,
             preferNetworks: this.deps.provider?.preferredChains?.() ?? [],
             mode: cfg.network,
             nevermined: neverminedConfigured(),
             neverminedEnv: neverminedEnvironment(),
             avoidNetworks,
         };
+    }
+    /**
+     * How a browser-wallet payment picks among a seller's networks (the user's explicit `network` wins):
+     *   0  a network this seller was paid on successfully (built-in list or remembered), or a Solana facilitator
+     *      that settled a remembered payment
+     *   1  Solana through a facilitator known to settle Phantom-signed payments (PayAI, ...)
+     *   2  Base (a plain wallet's EIP-3009 authorization has gone through for every seller so far)
+     *   3  Solana through a facilitator not seen yet
+     * A seller's network that keeps failing (SELLER_NETWORK_AVOID) is not used. Key-holding wallets keep the price order.
+     */
+    async networkPolicy(host, input) {
+        const family = input?.network === "base" ? "evm" : input?.network === "solana" ? "solana" : undefined;
+        const avoid = sellerNetworkAvoid(host);
+        if (this.deps.provider?.id !== "browser")
+            return { family, avoidFamily: undefined, networkRank: undefined };
+        const learned = await this.successes();
+        const h = host.toLowerCase().replace(/^www\./, "");
+        const sameHost = (x) => {
+            const l = x.toLowerCase().replace(/^www\./, "");
+            return h === l || h.endsWith("." + l) || l.endsWith("." + h);
+        };
+        const verified = verifiedFamily(host);
+        const networkRank = (r) => {
+            const fam = chainInfo(r.network)?.family;
+            const feePayer = typeof r.extra?.feePayer === "string" ? r.extra.feePayer : undefined;
+            if (learned.some((s) => sameHost(s.host) && s.network === r.network))
+                return 0;
+            if (verified.has(fam === "evm" ? "base" : "solana"))
+                return 0;
+            if (fam === "solana" && feePayer && learned.some((s) => s.feePayer === feePayer))
+                return 0;
+            if (fam === "solana" && feePayer && KNOWN_GOOD_FEE_PAYERS[feePayer])
+                return 1;
+            if (fam === "evm")
+                return 2;
+            return 3;
+        };
+        return { family, avoidFamily: avoid?.family, networkRank };
+    }
+    /** Successful payments remembered in the last 30 days. */
+    async successes() {
+        const all = this.deps.successRecords ? await this.deps.successRecords.read() : await readSuccesses(this.deps.successFile ?? successesPath());
+        const now = Date.now();
+        return all.filter((s) => now - Date.parse(s.ts) < SUCCESS_TTL_MS);
+    }
+    /** Networks of `accepts` to leave out for this seller (a network that keeps failing for it). */
+    sellerAvoided(accepts, avoidFamily) {
+        return avoidFamily ? accepts.filter((r) => chainInfo(r.network)?.family === avoidFamily).map((r) => r.network) : [];
     }
     /**
      * Solana facilitators to avoid (fee payer → why): only when a browser wallet signs (it rewrites the
@@ -296,7 +347,8 @@ export class X402Requester {
             };
         }
         const pr = probe.paymentRequired;
-        const ctx = this.selectionContext(cfg, [], await this.feePayersToAvoid(input));
+        const policy = await this.networkPolicy(probeHost(input.url) ?? new URL(input.url).hostname, input);
+        const ctx = this.selectionContext(cfg, this.sellerAvoided(pr.accepts, policy.avoidFamily), await this.feePayersToAvoid(input), policy);
         const evaluated = evaluate(pr.accepts, ctx);
         const selected = selectRequirement(pr.accepts, ctx);
         let withinLimits;
@@ -351,7 +403,8 @@ export class X402Requester {
         const pr = first.paymentRequired;
         const input_check = checkInput(pr.raw, input);
         const avoidFeePayers = await this.feePayersToAvoid(input);
-        const ctx = this.selectionContext(cfg, refusals.map((r) => r.network), avoidFeePayers);
+        const policy = await this.networkPolicy(host, input);
+        const ctx = this.selectionContext(cfg, [...refusals.map((r) => r.network), ...this.sellerAvoided(pr.accepts, policy.avoidFamily)], avoidFeePayers, policy);
         // The same checks request_x402_payment makes before a link: facilitator compatibility, payTo's receiving
         // account (a Solana option that cannot receive is skipped for another one) and the paying wallet's delegation.
         const { selected, evaluated, account: payto_account, skipped } = await this.choose(pr.accepts, ctx);
@@ -531,7 +584,8 @@ export class X402Requester {
         // 6 (selection). (host, network) refusals: never pick a network refused recently.
         const refusals = await this.refusalsFor(host, probe);
         const avoidFeePayers = await this.feePayersToAvoid(input);
-        const ctx = this.selectionContext(cfg, refusals.map((r) => r.network), avoidFeePayers);
+        const policy = await this.networkPolicy(host, input);
+        const ctx = this.selectionContext(cfg, [...refusals.map((r) => r.network), ...this.sellerAvoided(pr.accepts, policy.avoidFamily)], avoidFeePayers, policy);
         const { selected, evaluated, account, skipped } = await this.choose(pr.accepts, ctx);
         if (!selected) {
             const byFacilitator = evaluated.filter((c) => c.avoidedBy === "facilitator");
@@ -741,6 +795,19 @@ export class X402Requester {
             // Could not tell whether money moved: not re-sent, kept counted.
             status = "not_delivered";
             warnings.push("Could not confirm on chain whether the payment landed (all RPCs failed); it was not re-sent and is counted as spent.");
+        }
+        // A browser-wallet payment that went through: this seller's network (and its Solana facilitator) is preferred next time.
+        if ((status === "fulfilled" || status === "recovered_by_retry") && chain.settlement !== "not_found" && this.deps.provider?.id === "browser") {
+            const rec = {
+                ts: new Date().toISOString(),
+                host,
+                network: selected.network,
+                ...(typeof selected.extra?.feePayer === "string" ? { feePayer: selected.extra.feePayer } : {}),
+            };
+            if (this.deps.successRecords)
+                await this.deps.successRecords.record(rec);
+            else
+                await recordSuccess(rec, this.deps.successFile ?? successesPath());
         }
         // Receipt on a 200 first delivery
         let receipt = refetchResult?.receipt ? { ...refetchResult } : null;
