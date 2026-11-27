@@ -1,8 +1,104 @@
-# AgentPay402 MCP
+# AgentPay402
 
-A Claude Code plugin that lets Claude **discover, check and pay for** [x402](https://x402.org) APIs with your own wallet (CDP, Privy, Crossmint, or your own browser wallet: Phantom, Rabby or MetaMask; USDC on Base and Solana, plus Nevermined credits). Before paying it checks the seller; after paying it confirms the transfer on chain and the delivery.
+**Agent payments, without the friction — Claude × x402.**
 
-## Install
+AgentPay402 lets Claude buy data from paid [x402](https://x402.org) APIs, one request at a time, in USDC from your own wallet. No account, subscription or API key is needed. Claude finds the API and checks the seller, the price and your limits. You sign the payment in Phantom (Solana) or Rabby / MetaMask (Base), and then Claude confirms the transfer on chain and the delivery.
+
+Site: https://agentpay.x402jp.com · [Terms](https://agentpay.x402jp.com/terms.html) · [Privacy](https://agentpay.x402jp.com/privacy.html)
+
+There are two ways to use it:
+
+- **Connector** (`https://agentpay.x402jp.com/mcp`). Works in Claude (web, desktop) and Claude Code. You sign each payment through an approval link. This is the one most people want.
+- **Claude Code plugin**. Runs on your computer and can pay from a server wallet (CDP, Privy, Crossmint) without a link per payment. See [Claude Code plugin](#claude-code-plugin).
+
+## Connector
+
+### Add it
+
+**Claude** (Free, Pro, Max; Free plans allow one custom connector):
+
+1. Open **Customize → Connectors** (https://claude.ai/customize/connectors).
+2. Choose **+ Add → Add custom connector**.
+3. Name it `AgentPay402` and paste `https://agentpay.x402jp.com/mcp`.
+4. Choose **No sign in**, then **Add**.
+5. In a chat, turn it on from **+ → Connectors**.
+
+On Team and Enterprise plans, an owner adds it under Organization settings → Connectors. These steps follow Anthropic's [custom connector guide](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp).
+
+**Claude Code**:
+
+```bash
+claude mcp add --transport http agentpay https://agentpay.x402jp.com/mcp
+```
+
+Add `--scope user` to use it in every project.
+
+This one URL pays on both Solana and Base. You pick the wallet on the approval page. The URL can also carry settings, all optional:
+
+| Parameter | Meaning | Default |
+| - | - | - |
+| `solana` | Your Phantom address, so payments are counted per wallet | chosen on the approval page |
+| `base` | Your Rabby / MetaMask address | chosen on the approval page |
+| `network` | `mainnet` or `testnet` (Base Sepolia / Solana Devnet) | `mainnet` |
+| `max` | Per-payment limit in USD (can only be lowered) | `0.10` |
+| `daily` | 24-hour total per wallet in USD (can only be lowered) | `1.00` |
+
+Example: `https://agentpay.x402jp.com/mcp?network=testnet&max=0.05`. No tool can change these settings.
+
+### How a payment works
+
+1. **Ask Claude to buy.** Name the provider or the kind of data (for example "Nansen smart money netflow on Base" or "BTC price"), or paste a paid API's URL and say "buy this". AgentPay402 checks the seller, the price, your limits and whether the payment can go through. If a check fails, Claude tells you why and nothing is prepared.
+2. **Open the link and sign.** Claude shows an approval link with the price, the payee, the API and the network. Sign in Phantom on Solana, or in Rabby / MetaMask on Base. On a phone, open the link in the Phantom app.
+3. **Tell Claude "approved".** Claude fetches the result: the API response, the transaction found on chain and the delivery check.
+
+A link that is not approved expires in 5 minutes, and nothing is paid unless you sign.
+
+### Tools
+
+| Tool | What it does |
+| - | - |
+| `buy_data` | Finds the best-matching paid endpoint for a request and returns an approval link in one call. Asks for missing input (`confirm_input`) instead of guessing |
+| `request_x402_payment` | Checks a specific x402 URL and returns an approval link |
+| `get_x402_result` | After you approve: the response, the transaction and the delivery check |
+| `list_bazaar_resources` | Searches x402 services in the CDP Bazaar |
+| `get_resource_details` | Shows the price, payment options and input/output for one service |
+| `check_payment_requirements` | Shows what a 402 asks for and whether it fits the limits |
+| `check_seller` | Runs every pre-payment check without paying |
+| `get_wallet_address` / `get_wallet_balance` | Shows the addresses in the URL and their USDC balance |
+
+No tool moves money. A payment happens only when you sign the approval link in your own wallet. The server holds no keys.
+
+### Checks and network choice
+
+- Before a link is made, AgentPay402 checks a number of things. If any check fails, no link is made:
+  - [Seller Probe](https://probe.x402jp.com)'s record of the seller;
+  - required input that is missing;
+  - the price against your limits and the Bazaar listing;
+  - payments the seller refused recently;
+  - whether the seller's Solana address can receive USDC;
+  - whether the facilitator accepts what your wallet signs.
+- The seller's payment terms are checked again when you sign. If only the payee address changed (some sellers rotate it), the payment is rebuilt for the new address.
+- AgentPay402 picks the network in this order:
+  1. the network a payment to that seller is known to go through;
+  2. Solana through a facilitator known to accept Phantom;
+  3. Base;
+  4. any other Solana option.
+- The front page lists the APIs that have actually been paid and delivered through AgentPay402, each with its transaction.
+
+### Limits on approval links
+
+- One wallet address (when the connection URL has one), or else one connection, can have at most **20** approval links waiting at once, and the whole server at most 100. Each link expires in 5 minutes, nothing is paid unless it is signed, and the per-payment and 24-hour limits are checked again when it is signed, so these numbers only cap how many links are open. 20 is enough to test a batch of APIs in one go. An expired, rejected or finished link frees its place at once.
+- A connection is the MCP session or, without one, the sending IP. This server issues an `Mcp-Session-Id` at initialize, signed with a server key (HMAC): an id it did not issue is ignored and the caller is counted by IP. Ids are issued at most 10 times per 5 minutes per IP (1000 for Anthropic's published outbound IPs); over that, initialize still works but no id is issued.
+- Claude.ai connects from Anthropic's cloud and does not forward users' IPs, so the session is what tells users apart there. Anthropic's published outbound ranges (`160.79.104.0/21`, `153.61.208.0/20`, from https://platform.claude.com/docs/en/api/ip-addresses) only get looser limits; they never skip them. From any other IP, all its sessions together also count toward per-IP limits: 20 waiting links and 60 calls per 5 minutes.
+- Tools that fetch a seller's 402 (`request_x402_payment`, `buy_data`, `check_payment_requirements`, `check_seller`) can be called 30 times per 5 minutes per session (300 per Anthropic IP when there is no valid session). Over that, they return `blocked` / `rate_limited` with `retry_after_s`, without contacting the seller.
+- Only hashes of session ids and IPs are kept, keyed with the server secret, for 5 minutes. `/api/session-stats` shows, for today and yesterday, the share of those tool calls that came with a valid session id (no counts, ids or IPs).
+- After a payment is signed and sent, AgentPay402 waits up to 45 seconds for the seller's answer. If none comes, the outcome is settled from the chain: `not_delivered` (paid) when the transfer landed, or `no_response` (nothing paid) once the payment can no longer land: after the EIP-3009 `validBefore` on Base, or 3 minutes after it was built on Solana (its blockhash has expired by then). Until then `get_x402_result` returns `processing`.
+
+## Claude Code plugin
+
+A local MCP server for Claude Code that pays from a wallet you configure: CDP, Privy, Crossmint, or your own browser wallet (Phantom, Rabby, MetaMask). It uses USDC on Base and Solana, plus Nevermined credits. It adds `make_x402_request`, which pays within your limits from that wallet. A server wallet pays without asking each time; with a browser wallet, you sign each payment on a page it opens.
+
+### Install
 
 ```bash
 claude plugin marketplace add kato9292929/x402-wallet-mcp
@@ -14,9 +110,9 @@ claude plugin install agentpay402-mcp@x402inc
 
 To update: `claude plugin marketplace update x402inc`.
 
-**Claude Code only** (terminal, IDE extensions, the desktop app's Code tab). It does not work in Claude chat on claude.ai, the desktop app's chat, or Cowork. Node.js 20+ must be on your PATH.
+The plugin runs in Claude Code (terminal, IDE extensions, the desktop app's Code tab) and needs Node.js 20+ on your PATH. In Claude chat, use the [connector](#connector) instead.
 
-## Settings
+### Settings
 
 | Setting | Meaning | Default |
 | - | - | - |
@@ -46,7 +142,7 @@ Only the keys of the provider you choose need values.
 
 Test USDC for Base Sepolia and Solana Devnet: [Circle faucet](https://faucet.circle.com/).
 
-## Tools
+### Tools
 
 | Tool | What it does |
 | - | - |
@@ -62,7 +158,7 @@ Test USDC for Base Sepolia and Solana Devnet: [Circle faucet](https://faucet.cir
 
 Only `make_x402_request` moves money.
 
-## Spending limits and checks
+### Spending limits and checks
 
 Only you can set the limits — in the plugin settings, or in `~/.x402-wallet-mcp/config.json`, which wins over the plugin settings. No tool lets Claude change them. The server only reads `config.json`, and re-reads it on every payment, so edits apply without a restart.
 
@@ -99,18 +195,9 @@ What `make_x402_request` does, in order:
 
 The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or `rejected_by_seller`, with the transaction, a hash of the body and the receipt. A `blocked` or `rejected_by_seller` result carries a `detail`: what happened, which side the problem is on (wallet, facilitator, seller, or AgentPay402's own check) and what to do next.
 
-### Approval links (the connector at agentpay.x402jp.com/mcp)
+### Privacy (plugin)
 
-- One wallet address (when the connection URL has one), or else one connection, can have at most **20** approval links waiting at once, and the whole server at most 100. Each link expires in 5 minutes, nothing is paid unless it is signed, and the per-payment and 24-hour limits are checked again when it is signed, so these numbers only cap how many links are open. 20 is enough to test a batch of APIs in one go. An expired, rejected or finished link frees its place at once.
-- A connection is the MCP session or, without one, the sending IP. This server issues an `Mcp-Session-Id` at initialize, signed with a server key (HMAC): an id it did not issue is ignored and the caller is counted by IP. Ids are issued at most 10 times per 5 minutes per IP (1000 for Anthropic's published outbound IPs); over that, initialize still works but no id is issued.
-- Claude.ai connects from Anthropic's cloud and does not forward users' IPs, so the session is what tells users apart there. Anthropic's published outbound ranges (`160.79.104.0/21`, `153.61.208.0/20`, from https://platform.claude.com/docs/en/api/ip-addresses) only get looser limits; they never skip them. From any other IP, all its sessions together also count toward per-IP limits: 20 waiting links and 60 calls per 5 minutes.
-- Tools that fetch a seller's 402 (`request_x402_payment`, `buy_data`, `check_payment_requirements`, `check_seller`) can be called 30 times per 5 minutes per session (300 per Anthropic IP when there is no valid session). Over that, they return `blocked` / `rate_limited` with `retry_after_s`, without contacting the seller.
-- Only hashes of session ids and IPs are kept, for 5 minutes. `/api/session-stats` shows, for today and yesterday, the share of those tool calls that came with a valid session id (no counts, ids or IPs).
-- After a payment is signed and sent, AgentPay402 waits up to 45 seconds for the seller's answer. If none comes, the outcome is settled from the chain: `not_delivered` (paid) when the transfer landed, or `no_response` (nothing paid) once the payment can no longer land: after the EIP-3009 `validBefore` on Base, or 3 minutes after it was built on Solana (its blockhash has expired by then). Until then `get_x402_result` returns `processing`.
-
-## Privacy Policy
-
-This plugin runs on your computer. It has no server of its own, collects no analytics and sends no telemetry.
+The connector's privacy policy is at https://agentpay.x402jp.com/privacy.html. The plugin runs on your computer. It has no server of its own, collects no analytics and sends no telemetry.
 
 - **Credentials** you enter in the plugin settings are kept by Claude Code in your system's secure credential store and passed only to the local server. They are sent only to the provider they belong to (CDP, Privy, Crossmint or Nevermined), for requests you trigger.
 - **What leaves your computer**: the sellers you ask Claude to call (your request and, when you pay, the signed payment); your wallet provider; the CDP Bazaar (`api.cdp.coinbase.com`); Seller Probe lookups by host name (`probe.x402jp.com`); the seller's `/.well-known/x402-receipt.json`; and chain RPC reads (Base, Base Sepolia, Solana, Solana Devnet public RPCs, or your own via `BASE_RPC_URL` etc.).
@@ -120,7 +207,7 @@ This plugin runs on your computer. It has no server of its own, collects no anal
 
 Questions: open an issue at https://github.com/kato9292929/x402-wallet-mcp/issues.
 
-## Helper commands
+### Helper commands
 
 Wallet setup commands, run from a clone of this repository after `npm install`:
 

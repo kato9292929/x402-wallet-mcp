@@ -4,7 +4,7 @@ AgentPay402 MCP signs payments with your wallet, so security reports are taken s
 
 ## Supported versions
 
-Only the latest released version (npm `agentpay402-mcp`, the Claude Code plugin `agentpay402-mcp@x402inc`, and the `main` branch) receives fixes.
+Only the latest released version (npm `agentpay402-mcp`, the Claude Code plugin `agentpay402-mcp@x402inc`, the hosted connector at `https://agentpay.x402jp.com/mcp`, and the `main` branch) receives fixes.
 
 ## Reporting a vulnerability
 
@@ -16,4 +16,5 @@ Include what you found, how to reproduce it, and the impact (for example: a way 
 
 - Credentials are read from the plugin settings (Claude Code secure storage) or from environment variables you set; they are only sent to the provider they belong to.
 - Spending limits are enforced locally before any payment is signed. Any way around them is in scope.
+- The connector holds no keys. Any way to make an approval link pay something other than what its page shows, pay twice, pay over the URL's limits, or get around its per-connection limits is in scope.
 - Third-party services the server talks to (wallet providers, sellers, facilitators, RPCs, Seller Probe) are out of scope; report issues to them directly.
