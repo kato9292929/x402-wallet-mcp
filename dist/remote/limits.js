@@ -94,8 +94,8 @@ export function clientOf(req) {
     const anthropic = raw ? isAnthropicIp(raw) : false;
     const session = req.headers.get("mcp-session-id")?.trim();
     if (session && validSessionId(session))
-        return { conn: `s:${digest(session)}`, bySession: true, ip, anthropic };
-    return { conn: ip, bySession: false, ip, anthropic };
+        return { conn: `s:${digest(session)}`, bySession: true, ip, anthropic, session: "valid" };
+    return { conn: ip, bySession: false, ip, anthropic, session: session ? "invalid" : "none" };
 }
 const windowOf = (now) => {
     const windowMs = RATE_WINDOW_S * 1000;
@@ -158,5 +158,10 @@ export function isInitialize(body) {
         return false;
     }
 }
-/** Day key for the share of tool calls that came with a valid session (no ids or IPs, only two counters). */
-export const statKey = (now, withSession) => `ap:stat:${new Date(now).toISOString().slice(0, 10)}:${withSession ? "session" : "nosession"}`;
+/**
+ * Day counter of seller-reaching tool calls by the session id sent (valid / invalid / none) and by whether the
+ * call came from Anthropic's ranges. Only these six counters per day are kept: no ids or IPs.
+ */
+export const statKey = (now, session, anthropic) => `ap:stat2:${new Date(now).toISOString().slice(0, 10)}:${session}:${anthropic ? "anthropic" : "other"}`;
+/** The day counters before they were split (session / nosession), still read for the overall share. */
+export const legacyStatKey = (now, withSession) => `ap:stat:${new Date(now).toISOString().slice(0, 10)}:${withSession ? "session" : "nosession"}`;
