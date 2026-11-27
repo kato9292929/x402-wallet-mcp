@@ -35,7 +35,7 @@ import { describeRequirement } from "../x402/parse.js";
 import { PaymentError, X402Requester, type ExactPayment, type HttpRequestInput, type Prepared } from "../x402/request.js";
 import { configFor, type RemoteParams } from "./params.js";
 import type { Store } from "./store.js";
-import { MAX_PENDING_PER_CONNECTION, MAX_PENDING_TOTAL, type Client } from "./limits.js";
+import { MAX_PENDING_TOTAL, pendingBuckets, type Client } from "./limits.js";
 import { AddressWallet } from "./wallet.js";
 
 /**
@@ -76,8 +76,10 @@ export interface PendingRecord {
   payTo: string;
   /** The paying wallet: from the connection URL, or chosen on the approval page ("" until then). */
   payer: string;
-  /** Pending-count bucket this request was counted in. */
+  /** Pending-count bucket this request was counted in (the first of countKeys). */
   countKey: string;
+  /** All pending-count buckets this request was counted in (besides the server total). */
+  countKeys?: string[];
   priceUsd: string;
   createdAt: number;
   expiresAt: number;
@@ -216,23 +218,25 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
   }
   const wallet = new AddressWallet(params);
   const payer = wallet.knows(sel.network) ? await wallet.address(sel.network) : "";
-  // Links are counted per wallet address when the URL has one, else per connection (MCP session or IP), plus
-  // a total for the whole server.
-  const countKey = payer || `conn:${deps.client?.conn ?? "unknown"}`;
-  const max = payer ? MAX_PENDING_PER_ADDRESS : MAX_PENDING_PER_CONNECTION;
+  // Links are counted per wallet address (when the URL has one), per connection (MCP session or IP), per IP
+  // outside Anthropic's ranges, and for the whole server.
+  const buckets = pendingBuckets(deps.client, payer);
+  const countKey = buckets[0].key;
 
   const now = Date.now();
   // Only links that are still open count: an expired or finished one frees its place at once.
-  const open = ((await deps.store.get<{ id: string; exp: number }[]>(K.count(countKey))) ?? []).filter((e) => e.exp > now);
-  const all = ((await deps.store.get<{ id: string; exp: number }[]>(K.count(TOTAL_KEY))) ?? []).filter((e) => e.exp > now);
-  if (open.length >= max || all.length >= MAX_PENDING_TOTAL) {
+  const openOf = async (key: string) => ((await deps.store.get<{ id: string; exp: number }[]>(K.count(key))) ?? []).filter((e) => e.exp > now);
+  const opens = await Promise.all(buckets.map((b) => openOf(b.key)));
+  const all = await openOf(TOTAL_KEY);
+  const full = buckets.findIndex((b, i) => opens[i].length >= b.max);
+  if (full >= 0 || all.length >= MAX_PENDING_TOTAL) {
     return {
       url: input.url,
       status: "blocked",
       blocked_reason: "too_many_pending",
       message:
-        open.length >= max
-          ? `There are already ${max} payments waiting for approval for this ${payer ? "wallet" : "connection"}. Approve or reject them, or wait ${PENDING_TTL_S / 60} minutes.`
+        full >= 0
+          ? `There are already ${buckets[full].max} payments waiting for approval for this ${buckets[full].what}. Approve or reject them, or wait ${PENDING_TTL_S / 60} minutes.`
           : `The server has ${MAX_PENDING_TOTAL} payments waiting for approval. Try again in a few minutes.`,
       paid: false,
     };
@@ -249,13 +253,16 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
     payTo: sel.payTo,
     payer,
     countKey,
+    countKeys: buckets.map((b) => b.key),
     priceUsd: formatMicros(sel.priceMicros),
     createdAt: now,
     expiresAt: now + PENDING_TTL_S * 1000,
     state: "pending",
   };
   await deps.store.set(K.pending(rec.id), rec, PENDING_TTL_S);
-  await deps.store.set(K.count(countKey), [...open, { id: rec.id, exp: rec.expiresAt }], PENDING_TTL_S);
+  for (const [i, b] of buckets.entries()) {
+    await deps.store.set(K.count(b.key), [...opens[i], { id: rec.id, exp: rec.expiresAt }], PENDING_TTL_S);
+  }
   await deps.store.set(K.count(TOTAL_KEY), [...all, { id: rec.id, exp: rec.expiresAt }].slice(-MAX_PENDING_TOTAL), PENDING_TTL_S);
   const approveUrl = `${origin}/approve/${rec.id}?t=${rec.token}`;
   const solana = CHAINS[sel.network]?.family === "solana";
@@ -435,7 +442,7 @@ async function finishWith(rec: PendingRecord, result: Record<string, unknown>, d
   await deps.store.del(K.pending(rec.id));
   await deps.store.del(K.build(rec.id));
   await deps.store.del(K.sent(rec.id));
-  for (const key of [K.count(rec.countKey ?? rec.payer), K.count(TOTAL_KEY)]) {
+  for (const key of [...(rec.countKeys ?? [rec.countKey ?? rec.payer]).map(K.count), K.count(TOTAL_KEY)]) {
     const open = ((await deps.store.get<{ id: string; exp: number }[]>(key)) ?? []).filter((e) => e.id !== rec.id && e.exp > Date.now());
     await deps.store.set(key, open, PENDING_TTL_S);
   }
