@@ -35,6 +35,7 @@ import { describeRequirement } from "../x402/parse.js";
 import { PaymentError, X402Requester, type ExactPayment, type HttpRequestInput, type Prepared } from "../x402/request.js";
 import { configFor, type RemoteParams } from "./params.js";
 import type { Store } from "./store.js";
+import { MAX_PENDING_PER_CONNECTION, MAX_PENDING_TOTAL, type Client } from "./limits.js";
 import { AddressWallet } from "./wallet.js";
 
 /**
@@ -61,8 +62,8 @@ export const SELLER_TIMEOUT_MS = 45_000;
 /** After this, a Solana payment can no longer land: its blockhash (fetched when it was built) has expired. */
 const SOLANA_LAND_WINDOW_MS = 180_000;
 const SENT_TTL_S = 24 * 3600;
-/** Without an address in the URL the wallet is chosen at approval, so pending requests share one bucket. */
-export const MAX_PENDING_UNBOUND = 100;
+/** Key of the server-wide count of waiting links. */
+const TOTAL_KEY = "__all__";
 
 export interface PendingRecord {
   id: string;
@@ -155,6 +156,8 @@ const log = async (entry: Record<string, unknown>) => {
 export interface FlowDeps {
   store: Store;
   fetch?: typeof fetch;
+  /** Who is calling (MCP session or IP hash): links without a wallet address are counted per connection. */
+  client?: Client;
   /** Overrides on-chain lookups / probe / bazaar (tests). */
   requesterOverrides?: Partial<ConstructorParameters<typeof X402Requester>[0]>;
 }
@@ -213,18 +216,24 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
   }
   const wallet = new AddressWallet(params);
   const payer = wallet.knows(sel.network) ? await wallet.address(sel.network) : "";
-  const countKey = payer || "unbound";
-  const max = payer ? MAX_PENDING_PER_ADDRESS : MAX_PENDING_UNBOUND;
+  // Links are counted per wallet address when the URL has one, else per connection (MCP session or IP), plus
+  // a total for the whole server.
+  const countKey = payer || `conn:${deps.client?.conn ?? "unknown"}`;
+  const max = payer ? MAX_PENDING_PER_ADDRESS : MAX_PENDING_PER_CONNECTION;
 
   const now = Date.now();
   // Only links that are still open count: an expired or finished one frees its place at once.
   const open = ((await deps.store.get<{ id: string; exp: number }[]>(K.count(countKey))) ?? []).filter((e) => e.exp > now);
-  if (open.length >= max) {
+  const all = ((await deps.store.get<{ id: string; exp: number }[]>(K.count(TOTAL_KEY))) ?? []).filter((e) => e.exp > now);
+  if (open.length >= max || all.length >= MAX_PENDING_TOTAL) {
     return {
       url: input.url,
       status: "blocked",
       blocked_reason: "too_many_pending",
-      message: `There are already ${max} payments waiting for approval for this wallet. Approve or reject them, or wait ${PENDING_TTL_S / 60} minutes.`,
+      message:
+        open.length >= max
+          ? `There are already ${max} payments waiting for approval for this ${payer ? "wallet" : "connection"}. Approve or reject them, or wait ${PENDING_TTL_S / 60} minutes.`
+          : `The server has ${MAX_PENDING_TOTAL} payments waiting for approval. Try again in a few minutes.`,
       paid: false,
     };
   }
@@ -247,6 +256,7 @@ export async function requestPayment(params: RemoteParams, input: HttpRequestInp
   };
   await deps.store.set(K.pending(rec.id), rec, PENDING_TTL_S);
   await deps.store.set(K.count(countKey), [...open, { id: rec.id, exp: rec.expiresAt }], PENDING_TTL_S);
+  await deps.store.set(K.count(TOTAL_KEY), [...all, { id: rec.id, exp: rec.expiresAt }].slice(-MAX_PENDING_TOTAL), PENDING_TTL_S);
   const approveUrl = `${origin}/approve/${rec.id}?t=${rec.token}`;
   const solana = CHAINS[sel.network]?.family === "solana";
   const signWith = solana ? "Phantom" : "Rabby / MetaMask";
@@ -425,9 +435,10 @@ async function finishWith(rec: PendingRecord, result: Record<string, unknown>, d
   await deps.store.del(K.pending(rec.id));
   await deps.store.del(K.build(rec.id));
   await deps.store.del(K.sent(rec.id));
-  const key = K.count(rec.countKey ?? rec.payer);
-  const open = ((await deps.store.get<{ id: string; exp: number }[]>(key)) ?? []).filter((e) => e.id !== rec.id && e.exp > Date.now());
-  await deps.store.set(key, open, PENDING_TTL_S);
+  for (const key of [K.count(rec.countKey ?? rec.payer), K.count(TOTAL_KEY)]) {
+    const open = ((await deps.store.get<{ id: string; exp: number }[]>(key)) ?? []).filter((e) => e.id !== rec.id && e.exp > Date.now());
+    await deps.store.set(key, open, PENDING_TTL_S);
+  }
 }
 
 export async function rejectPayment(id: string, token: string | null, deps: FlowDeps) {
