@@ -117,7 +117,7 @@ export interface Candidate {
   probe?: string;
   /** Seller Probe's score for the host, when looked up. */
   probeScore?: number;
-  /** A payment to this seller went through before (through AgentPay). */
+  /** A payment to this seller went through before (through AgentPay402). */
   succeeded?: boolean;
 }
 
@@ -166,7 +166,7 @@ export async function findCandidates(args: BuyDataArgs, networks: string[], capM
 /** Seller Probe outcomes that rule a seller out: its latest paid purchase failed or was refused. */
 export const BAD_PROBE = new Set(["not_delivered", "request_rejected", "failed", "overcharged", "invalid_target"]);
 
-/** Order among equally good matches: paid through AgentPay before, then calls in the last 30 days, then Probe score. */
+/** Order among equally good matches: paid through AgentPay402 before, then calls in the last 30 days, then Probe score. */
 const byRecord = (a: Candidate, b: Candidate) =>
   Number(!!b.succeeded) - Number(!!a.succeeded) || b.calls30d - a.calls30d || (b.probeScore ?? -1) - (a.probeScore ?? -1);
 
@@ -201,7 +201,7 @@ export async function rankByRecord(
 
 /**
  * The best candidate, or null when nothing matches or the top ones cannot be told apart: the same match,
- * no difference in payments through AgentPay, calls in the last 30 days or Probe score.
+ * no difference in payments through AgentPay402, calls in the last 30 days or Probe score.
  */
 export function decide(candidates: Candidate[]): Candidate | null {
   const [top, next] = candidates;

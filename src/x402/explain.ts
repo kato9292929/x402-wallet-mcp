@@ -29,8 +29,8 @@ export function payToAccountMissingDetail(o: { payTo: string; ata?: string; asse
 export function offerChangedDetail(changes: { field: string; before: string; after: string }[]): string {
   const list = changes.map((c) => `${c.field} ${c.before} → ${c.after}`).join(", ");
   return (
-    `The seller's payment terms changed between the approval link and signing (${list}), so AgentPay stopped before the wallet signed. ` +
-    "Problem side: the seller (its 402 changed); AgentPay's check stopped it. Nothing was paid. " +
+    `The seller's payment terms changed between the approval link and signing (${list}), so AgentPay402 stopped before the wallet signed. ` +
+    "Problem side: the seller (its 402 changed); AgentPay402's check stopped it. Nothing was paid. " +
     "Next: ask for a new approval link; if the terms keep changing, the seller's 402 is not stable enough to pay."
   );
 }

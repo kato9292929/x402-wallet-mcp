@@ -1,5 +1,5 @@
 /**
- * What real payments through AgentPay have shown (Phantom on Solana, Rabby / MetaMask on Base,
+ * What real payments through AgentPay402 have shown (Phantom on Solana, Rabby / MetaMask on Base,
  * 2026-11-24..27). Used to pick the network a payment will go through, and listed on the front page.
  */
 
@@ -15,7 +15,7 @@ export interface VerifiedPayment {
   tx: string;
 }
 
-/** Paid and delivered through AgentPay, checked on chain. The front page lists the same entries. */
+/** Paid and delivered through AgentPay402, checked on chain. The front page lists the same entries. */
 export const VERIFIED_PAYMENTS: VerifiedPayment[] = [
   { name: "Agent Data", host: "agent-data-api.agentdata.workers.dev", category: "Contract opportunities", endpoint: "GET /v1/contracts/opportunities", network: "base", priceUsd: "0.01", tx: "https://basescan.org/tx/0xe9baa1000060c93d79ebacc35a3db894f52e2671ba93e78222e846652042372f" },
   { name: "NZ Data", host: "nzdata.zakwins.workers.dev", category: "New Zealand working days", endpoint: "GET /nz/working-days", network: "base", priceUsd: "0.002", tx: "https://basescan.org/tx/0xd51cc1a2c54250718530493ee4875316b7725f4b3bbcb5ddab82a6beb05b64c6" },

@@ -56,7 +56,7 @@ async function registerTools(server, params, origin, d) {
             network: z
                 .enum(["base", "solana"])
                 .optional()
-                .describe("Pay on this network only. Omit to let AgentPay pick the network the payment is known to go through"),
+                .describe("Pay on this network only. Omit to let AgentPay402 pick the network the payment is known to go through"),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     }, async ({ allow_incompatible_facilitator, network, ...args }) => run(async () => {
@@ -94,7 +94,7 @@ async function registerTools(server, params, origin, d) {
             network: z
                 .enum(["base", "solana"])
                 .optional()
-                .describe("Pay on this network only. Omit to let AgentPay pick the network the payment is known to go through"),
+                .describe("Pay on this network only. Omit to let AgentPay402 pick the network the payment is known to go through"),
             use_example: z
                 .boolean()
                 .optional()

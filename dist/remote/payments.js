@@ -230,7 +230,7 @@ export async function buyData(params, args, origin, deps) {
     const family = args.network === "base" ? "evm" : args.network === "solana" ? "solana" : undefined;
     const networks = new AddressWallet(params).preferredChains().filter((c) => !family || CHAINS[c]?.family === family);
     const found = await findCandidates(args, networks, cap, deps.fetch);
-    // Equally good matches are told apart by the sellers' records: paid through AgentPay before, then calls in the
+    // Equally good matches are told apart by the sellers' records: paid through AgentPay402 before, then calls in the
     // last 30 days, then Seller Probe's score.
     const learned = (await deps.store.get(K.successes())) ?? [];
     const succeeded = (host) => verifiedFamily(host).size > 0 || learned.some((s) => s.host === host);
