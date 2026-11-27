@@ -34,20 +34,23 @@ export const RATE_WINDOW_S = 300;
  * external servers)": https://platform.claude.com/docs/en/api/ip-addresses (checked 2026-11-27).
  */
 export const ANTHROPIC_OUTBOUND_V4 = ["160.79.104.0/21", "153.61.208.0/20"];
-const SALT = () => process.env.AGENTPAY_HASH_SALT || "agentpay402-limits";
-const digest = (v) => createHash("sha256").update(`${SALT()}:${v}`).digest("hex").slice(0, 32);
+/** The server's secret (AGENTPAY_SESSION_SECRET, else the store's token, which is already set). */
+const serverSecret = () => process.env.AGENTPAY_SESSION_SECRET || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 let processKey;
-/**
- * Key for signing session ids. It is derived from a server secret that is already set (the store's token),
- * so no extra setting is needed; AGENTPAY_SESSION_SECRET overrides it. Without either (local runs, tests),
- * a random key per process.
- */
-function sessionKey() {
-    const secret = process.env.AGENTPAY_SESSION_SECRET || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+/** A key for one purpose, derived from the server's secret; without one (local runs, tests), random per process. */
+const keyFor = (purpose) => {
+    const secret = serverSecret();
     if (secret)
-        return createHash("sha256").update(`agentpay402-session-v1:${secret}`).digest();
-    return (processKey ??= randomBytes(32));
-}
+        return createHash("sha256").update(`agentpay402-${purpose}-v1:${secret}`).digest();
+    return createHash("sha256").update(purpose).update((processKey ??= randomBytes(32))).digest();
+};
+/**
+ * Hashes of session ids and IPs are keyed with a secret (HMAC): with a public salt, the about 4.3 billion IPv4
+ * addresses could be tried one by one to turn a hash back into the IP. AGENTPAY_HASH_SALT overrides the key.
+ */
+const digest = (v) => createHmac("sha256", process.env.AGENTPAY_HASH_SALT || keyFor("hash")).update(v).digest("hex").slice(0, 32);
+/** Key for signing session ids: rotating the store token makes issued ids invalid (callers fall back to IP). */
+const sessionKey = () => keyFor("session");
 const sign = (nonce) => createHmac("sha256", sessionKey()).update(nonce).digest("hex").slice(0, 32);
 /** A new session id: "<random>.<signature>". */
 export function newSessionId() {
