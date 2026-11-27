@@ -9,7 +9,7 @@ const SOLANA_WEB3 = {
 const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export function messagePage(title, text) {
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentPay402</title>${APPROVAL_FONTS}<style>${APPROVAL_CSS}</style></head><body><main class="card">
+<title>AgentPay402</title><link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/icon.png" type="image/png" sizes="512x512"><link rel="apple-touch-icon" href="/apple-touch-icon.png">${APPROVAL_FONTS}<style>${APPROVAL_CSS}</style></head><body><main class="card">
 <div class="brand">AgentPay402</div><p class="lead" style="font-size:16px;color:var(--ink);margin-top:24px">${esc(title)}</p>
 <p class="lead">${esc(text)}</p></main></body></html>`;
 }
@@ -37,7 +37,7 @@ export function approvalPage(rec, origin) {
     return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>AgentPay402 — approve a payment</title>
+<title>AgentPay402 — approve a payment</title><link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/icon.png" type="image/png" sizes="512x512"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 ${APPROVAL_FONTS}
 <style>${APPROVAL_CSS}
 #approve{flex:2}
