@@ -5,7 +5,7 @@ import { registerReadOnlyTools, requestShape, ResultError, run } from "../tools.
 import { PaymentError } from "../x402/request.js";
 import { messagePage, approvalPage } from "./page.js";
 import { REMOTE_INSTRUCTIONS } from "../instructions.js";
-import { clientOf, isInitialize, newSessionId, rateLimitedResult, takeCall } from "./limits.js";
+import { clientOf, isInitialize, newSessionId, rateLimitedResult, statKey, takeCall, takeSession } from "./limits.js";
 import { ParamError, parseParams, type RemoteParams } from "./params.js";
 import {
   FlowError,
@@ -43,6 +43,7 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
       config,
       RATE_LIMITED_TOOLS.has(name) && d.client
         ? async (args: any) => {
+            await d.store.incr(statKey(Date.now(), d.client!.bySession), 1, 3 * 86400).catch(() => 0);
             const r = await takeCall(d.store, d.client!);
             if (!r.ok) return run(async () => { throw new ResultError(rateLimitedResult(r)); });
             return cb(args);
@@ -173,9 +174,14 @@ export async function handleMcp(req: Request): Promise<Response> {
     serverInfo: { name: "agentpay402", version: VERSION },
     instructions: REMOTE_INSTRUCTIONS,
   } as any);
-  // Issue an MCP session id at initialize (the server keeps no session state): clients send it back on every
-  // request, so limits can be counted per connection rather than per IP, which many Claude.ai users share.
-  const issue = req.method === "POST" && !req.headers.get("mcp-session-id") && isInitialize(await req.clone().text());
+  // Issue a signed MCP session id at initialize (the server keeps no session state): clients send it back on
+  // every request, so limits can be counted per connection rather than per IP, which many Claude.ai users
+  // share. Ids are limited per IP; over that, no id is issued and the caller is counted by IP.
+  const issue =
+    req.method === "POST" &&
+    !d.client!.bySession &&
+    isInitialize(await req.clone().text()) &&
+    (await takeSession(d.store, d.client!));
   const res = await handler(req);
   if (!issue || !res.ok) return res;
   const headers = new Headers(res.headers);
@@ -222,4 +228,21 @@ export async function handleApproveAction(req: Request, id: string, action: stri
     console.error("[agentpay402]", err);
     return json({ error: "Something went wrong." }, 500);
   }
+}
+
+/**
+ * Share of today's and yesterday's tool calls (those that reach sellers) that came with a session id this
+ * server issued. Only two counters per day are kept, no ids or IPs; the counts themselves are not shown.
+ */
+export async function handleSessionStats(): Promise<Response> {
+  const d = await deps();
+  const day = 86400_000;
+  const out = [];
+  for (const t of [Date.now(), Date.now() - day]) {
+    const withS = Number((await d.store.get(statKey(t, true))) ?? 0);
+    const without = Number((await d.store.get(statKey(t, false))) ?? 0);
+    const total = withS + without;
+    out.push({ date: new Date(t).toISOString().slice(0, 10), with_session_pct: total ? Math.round((withS / total) * 100) : null });
+  }
+  return json({ days: out });
 }
