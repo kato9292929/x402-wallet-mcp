@@ -257,6 +257,19 @@ describe("remote: approval flow (Base)", () => {
     expect(res.detail).toMatch(/remove the EIP-7702 delegation/);
   });
 
+  it("builds with the seller's new pay-to address when only that changed, and shows it to the page", async () => {
+    const accepts = [exactReq("5000", BASE_SEPOLIA)];
+    const { deps, params } = setup({ accepts });
+    const r = await requestPayment(params, { url: URL_ }, ORIGIN, deps);
+    const newPayTo = "0x000000000000000000000000000000000000bEEF";
+    accepts[0] = { ...exactReq("5000", BASE_SEPOLIA), payTo: newPayTo };
+    const built: any = await buildPayment(r.request_id, tokenOf(r.approve_url), deps);
+    expect(built.family).toBe("evm");
+    expect(built.payTo).toBe(newPayTo);
+    expect(built.payto_changed).toMatchObject({ after: newPayTo });
+    expect(JSON.parse(built.typedData).message.to.toLowerCase()).toBe(newPayTo.toLowerCase());
+  });
+
   it("says which of the seller's terms changed before signing", async () => {
     const accepts = [exactReq("5000", BASE_SEPOLIA)];
     const { deps, params } = setup({ accepts });
