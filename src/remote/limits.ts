@@ -47,6 +47,8 @@ export interface Client {
   ip: string;
   /** Whether the IP is in Anthropic's published outbound ranges. */
   anthropic: boolean;
+  /** The session id the caller sent: one this server signed, one it did not (e.g. from before ids were signed), or none. */
+  session?: "valid" | "invalid" | "none";
 }
 
 /** The server's secret (AGENTPAY_SESSION_SECRET, else the store's token, which is already set). */
@@ -115,8 +117,8 @@ export function clientOf(req: Request): Client {
   const ip = raw ? `ip:${digest(raw)}` : "unknown";
   const anthropic = raw ? isAnthropicIp(raw) : false;
   const session = req.headers.get("mcp-session-id")?.trim();
-  if (session && validSessionId(session)) return { conn: `s:${digest(session)}`, bySession: true, ip, anthropic };
-  return { conn: ip, bySession: false, ip, anthropic };
+  if (session && validSessionId(session)) return { conn: `s:${digest(session)}`, bySession: true, ip, anthropic, session: "valid" };
+  return { conn: ip, bySession: false, ip, anthropic, session: session ? "invalid" : "none" };
 }
 
 export interface RateResult {
@@ -187,6 +189,12 @@ export function isInitialize(body: string): boolean {
   }
 }
 
-/** Day key for the share of tool calls that came with a valid session (no ids or IPs, only two counters). */
-export const statKey = (now: number, withSession: boolean) =>
+/**
+ * Day counter of seller-reaching tool calls by the session id sent (valid / invalid / none) and by whether the
+ * call came from Anthropic's ranges. Only these six counters per day are kept: no ids or IPs.
+ */
+export const statKey = (now: number, session: "valid" | "invalid" | "none", anthropic: boolean) =>
+  `ap:stat2:${new Date(now).toISOString().slice(0, 10)}:${session}:${anthropic ? "anthropic" : "other"}`;
+/** The day counters before they were split (session / nosession), still read for the overall share. */
+export const legacyStatKey = (now: number, withSession: boolean) =>
   `ap:stat:${new Date(now).toISOString().slice(0, 10)}:${withSession ? "session" : "nosession"}`;

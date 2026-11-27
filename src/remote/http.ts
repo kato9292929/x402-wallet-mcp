@@ -5,7 +5,7 @@ import { registerReadOnlyTools, requestShape, ResultError, run } from "../tools.
 import { PaymentError } from "../x402/request.js";
 import { messagePage, approvalPage } from "./page.js";
 import { REMOTE_INSTRUCTIONS } from "../instructions.js";
-import { clientOf, isInitialize, newSessionId, rateLimitedResult, statKey, takeCall, takeSession } from "./limits.js";
+import { clientOf, isInitialize, newSessionId, legacyStatKey, rateLimitedResult, statKey, takeCall, takeSession } from "./limits.js";
 import { ParamError, parseParams, type RemoteParams } from "./params.js";
 import {
   FlowError,
@@ -43,7 +43,7 @@ async function registerTools(server: any, params: RemoteParams, origin: string, 
       config,
       RATE_LIMITED_TOOLS.has(name) && d.client
         ? async (args: any) => {
-            await d.store.incr(statKey(Date.now(), d.client!.bySession), 1, 3 * 86400).catch(() => 0);
+            await d.store.incr(statKey(Date.now(), d.client!.session ?? "none", d.client!.anthropic), 1, 3 * 86400).catch(() => 0);
             const r = await takeCall(d.store, d.client!);
             if (!r.ok) return run(async () => { throw new ResultError(rateLimitedResult(r)); });
             return cb(args);
@@ -231,18 +231,32 @@ export async function handleApproveAction(req: Request, id: string, action: stri
 }
 
 /**
- * Share of today's and yesterday's tool calls (those that reach sellers) that came with a session id this
- * server issued. Only two counters per day are kept, no ids or IPs; the counts themselves are not shown.
+ * Share of today's and yesterday's seller-reaching tool calls by the session id they came with: one this
+ * server signed (valid), one it did not sign (invalid, e.g. issued before ids were signed) or none, for calls
+ * from Anthropic's published ranges (Claude.ai and other Anthropic clients) and from other IPs. Only
+ * percentages are shown, no counts, ids or IPs.
  */
 export async function handleSessionStats(): Promise<Response> {
   const d = await deps();
   const day = 86400_000;
+  const n = async (k: string) => Number((await d.store.get(k)) ?? 0);
+  const pct = (a: number, total: number) => (total ? Math.round((a / total) * 100) : null);
   const out = [];
   for (const t of [Date.now(), Date.now() - day]) {
-    const withS = Number((await d.store.get(statKey(t, true))) ?? 0);
-    const without = Number((await d.store.get(statKey(t, false))) ?? 0);
-    const total = withS + without;
-    out.push({ date: new Date(t).toISOString().slice(0, 10), with_session_pct: total ? Math.round((withS / total) * 100) : null });
+    const split = async (anthropic: boolean) => {
+      const [valid, invalid, none] = await Promise.all((["valid", "invalid", "none"] as const).map((s) => n(statKey(t, s, anthropic))));
+      const total = valid + invalid + none;
+      return { valid, invalid, none, total, out: { valid_pct: pct(valid, total), invalid_pct: pct(invalid, total), none_pct: pct(none, total) } };
+    };
+    const [a, o] = await Promise.all([split(true), split(false)]);
+    const [lw, ln] = await Promise.all([n(legacyStatKey(t, true)), n(legacyStatKey(t, false))]);
+    const withS = a.valid + o.valid + lw;
+    out.push({
+      date: new Date(t).toISOString().slice(0, 10),
+      with_session_pct: pct(withS, a.total + o.total + lw + ln),
+      from_anthropic: a.out,
+      from_other_ips: o.out,
+    });
   }
   return json({ days: out });
 }

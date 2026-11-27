@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BASE_SEPOLIA } from "../src/chains.js";
-import { handleMcp } from "../src/remote/http.js";
+import { handleMcp, handleSessionStats } from "../src/remote/http.js";
 import {
   MAX_PENDING_PER_CONNECTION,
   MAX_SESSIONS_PER_IP,
@@ -180,5 +180,23 @@ describe("waiting approval links per connection", () => {
       blocked_reason: "too_many_pending",
     });
     expect((await requestPayment(params, { url: URL_ }, ORIGIN, deps(session("c", "ip:y"), store))).status).toBe("awaiting_approval");
+  });
+});
+
+describe("session stats", () => {
+  it("count seller-reaching calls by valid / unsigned / no session id, split by Anthropic's ranges", async () => {
+    expect(clientOf(new Request(ORIGIN, { headers: { "mcp-session-id": newSessionId() } })).session).toBe("valid");
+    expect(clientOf(new Request(ORIGIN, { headers: { "mcp-session-id": "0".repeat(32) } })).session).toBe("invalid");
+    expect(clientOf(new Request(ORIGIN)).session).toBe("none");
+    const call = (headers: Record<string, string>) =>
+      handleMcp(rpc({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "check_seller", arguments: { url: "https://127.0.0.1:1/x" } } }, headers));
+    await call({ "mcp-session-id": newSessionId(), "x-vercel-forwarded-for": "160.79.105.1" });
+    await call({ "mcp-session-id": "f".repeat(32), "x-vercel-forwarded-for": "160.79.105.2" });
+    await call({ "x-vercel-forwarded-for": "160.79.105.3" });
+    const today = (await (await handleSessionStats()).json()).days[0];
+    expect(today.from_anthropic.valid_pct).toBeGreaterThan(0);
+    expect(today.from_anthropic.invalid_pct).toBeGreaterThan(0);
+    expect(today.from_anthropic.none_pct).toBeGreaterThan(0);
+    expect(JSON.stringify(today)).not.toMatch(/160\.79|ffff/);
   });
 });
