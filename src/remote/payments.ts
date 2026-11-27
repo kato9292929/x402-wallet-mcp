@@ -516,7 +516,15 @@ export async function buildPayment(id: string, token: string | null, deps: FlowD
   const offer_changed = (["network", "amount", "payTo", "asset"] as const)
     .filter((k) => sel[k] !== rec[k])
     .map((k) => ({ field: k, before: String(rec[k] ?? ""), after: String(sel[k] ?? "") }));
-  if (offer_changed.length) {
+  // Some sellers (e.g. Tavily) give a new pay-to address in every 402. When only the address changed (same
+  // network, amount and asset), the payment is built with the new address and the page shows it before the
+  // wallet signs, instead of stopping: asking again would get yet another address.
+  let payToChanged: { before: string; after: string } | undefined;
+  if (offer_changed.length === 1 && offer_changed[0].field === "payTo" && sel.payTo) {
+    payToChanged = { before: offer_changed[0].before, after: offer_changed[0].after };
+    console.log(`[agentpay402] seller's pay-to address changed for ${id}: ${JSON.stringify(payToChanged)}`);
+    rec = { ...rec, payTo: sel.payTo };
+  } else if (offer_changed.length) {
     console.log(`[agentpay402] seller's terms changed for ${id}: ${JSON.stringify(offer_changed)}`);
     await finishWith(
       rec,
@@ -555,7 +563,7 @@ export async function buildPayment(id: string, token: string | null, deps: FlowD
   await deps.store.set(K.build(id), record, BUILD_TTL_S);
   const remaining = Math.max(BUILD_TTL_S, Math.ceil((rec.expiresAt - Date.now()) / 1000));
   await deps.store.set(K.pending(id), { ...rec, state: "signing" }, remaining);
-  return forPage;
+  return payToChanged ? { ...forPage, payTo: rec.payTo, payto_changed: payToChanged } : forPage;
 }
 
 function ed25519Key(addr: string) {

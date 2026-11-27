@@ -135,6 +135,12 @@ $("approve").onclick = async () => {
     const sign = d.family === "solana" ? await connectSolana() : await connectEvm();
     msg("Preparing the payment…");
     const req = await post("build", { payer: d.address });
+    if (req.payTo && req.payTo !== d.to) {
+      // The seller gave a new pay-to address (same amount and network): show it before the wallet asks.
+      d.to = req.payTo; setFull("to", short(req.payTo), req.payTo);
+      msg("The seller's pay-to address changed to " + short(req.payTo) + ". Check it in your wallet before you approve.");
+      await new Promise((r) => setTimeout(r, 1500));
+    }
     msg("Approve it in your wallet…");
     const signed = await sign(req);
     msg("Paying…");
