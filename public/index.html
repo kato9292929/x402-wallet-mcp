@@ -99,8 +99,23 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;col
 .note p{color:var(--muted);font-size:16px;max-width:640px;margin:0 auto;line-height:1.7}
 .note .kicker{margin-bottom:14px}
 .lede{color:var(--muted);font-size:16px;line-height:1.6;max-width:760px;margin:-18px 0 28px}
-.rainbow{width:fit-content;max-width:100%;background:linear-gradient(90deg,#ff6a5c,#ffb347,#ffe46b,#7cf2a0,#6fe3ff,#8fa8ff,#c29bff);
--webkit-background-clip:text;background-clip:text;color:transparent}
+.rainbow{width:fit-content;max-width:100%}
+/* Holographic text: an iridescent sheen moving through the letters, fine scanlines inside them, a soft glow and
+   a short flicker every 4 seconds. */
+.holo{color:transparent;text-shadow:none;
+  background:linear-gradient(105deg,#e8fbff 0%,#8ff5ff 14%,#c9a7ff 28%,#ff9be8 40%,#fff3b0 52%,#9effd8 64%,#8ff5ff 78%,#e8fbff 100%);
+  background-size:260% 100%;-webkit-background-clip:text;background-clip:text;
+  -webkit-mask-image:repeating-linear-gradient(180deg,#000 0 2px,rgba(0,0,0,.62) 2px 3px);
+          mask-image:repeating-linear-gradient(180deg,#000 0 2px,rgba(0,0,0,.62) 2px 3px)}
+.holo-glow{filter:drop-shadow(0 2px 10px rgba(0,0,0,.75)) drop-shadow(0 0 10px rgba(110,230,255,.45)) drop-shadow(0 0 28px rgba(170,120,255,.25))}
+.holo:not(.reveal),.holo.reveal.in{animation:holo-shift 7s linear infinite,holo-flicker 4s steps(1) infinite}
+.holo.reveal.in{animation-delay:0s,.9s}
+@keyframes holo-shift{to{background-position:-260% 0}}
+@keyframes holo-flicker{0%,100%{opacity:1}61%{opacity:1}61.5%{opacity:.55}62%{opacity:1}62.6%{opacity:.75}63%{opacity:1}}
+.wordmark .via{color:#bff6ff;text-shadow:0 0 10px rgba(110,230,255,.6);letter-spacing:.08em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.26em}
+.wordmark .via::before{content:"> ";color:#7ff0ff}
+.wordmark .via::after{content:"_";animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
 .paid-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--line);border-radius:16px;overflow:hidden;
 background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
 .paid-col+.paid-col{border-left:1px solid var(--line)}
@@ -155,6 +170,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
   html{scroll-behavior:auto}
   .reveal{opacity:1;transform:none;transition:none}
   .rise,.stage{animation:none;opacity:1;transform:none}
+  .holo,.holo.reveal.in,.wordmark .via::after{animation:none}
   .cmd-text{transition:none}
 }
 </style>
@@ -164,7 +180,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
   <div class="stage" aria-hidden="true"><canvas id="gl"></canvas><canvas id="fx"></canvas></div>
   <header class="nav">
     <div class="brand">
-      <a class="brand-name" href="/">AgentPay402</a>
+      <a class="brand-name holo-glow" href="/"><span class="holo">AgentPay402</span></a>
       <nav class="links" aria-label="Main">
         <a href="#how">How to Pay</a>
         <a href="#paid">Paid APIs</a>
@@ -184,14 +200,14 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
     </div>
   </header>
   <div class="copy">
-    <h1 class="wordmark rise"><span class="lead">Agent payments,<br> without the friction</span><span class="via">Claude × x402</span></h1>
+    <h1 class="wordmark holo-glow rise"><span class="lead holo">Agent payments,<br> without the friction</span><span class="via">Claude × x402</span></h1>
   </div>
 </section>
 
 <main class="more">
   <section class="block" id="how" aria-labelledby="how-title">
     <p class="kicker reveal">How to Pay</p>
-    <h2 class="h2 rainbow reveal" id="how-title">Four steps. Claude buys, you sign.</h2>
+    <h2 class="h2 rainbow holo reveal" id="how-title">Four steps. Claude buys, you sign.</h2>
     <ol class="steps">
       <li class="card reveal">
         <span class="num">01</span>
@@ -235,7 +251,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
 
   <section class="block" id="paid" aria-labelledby="paid-title">
     <p class="kicker reveal">Paid through AgentPay402</p>
-    <h2 class="h2 rainbow reveal" id="paid-title">APIs Claude has already paid for.</h2>
+    <h2 class="h2 rainbow holo reveal" id="paid-title">APIs Claude has already paid for.</h2>
     <p class="lede reveal">Real x402 purchases made from Claude with an approval link, signed in a browser wallet and confirmed on chain (Nov 2026). Each “Paid” opens the transaction.</p>
     <div class="paid-grid reveal">
       <div class="paid-col">
@@ -481,7 +497,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
 
   <section class="block" aria-labelledby="checks-title">
     <p class="kicker reveal">Before and after every payment</p>
-    <h2 class="h2 rainbow reveal" id="checks-title">Checks you would forget to run yourself.</h2>
+    <h2 class="h2 rainbow holo reveal" id="checks-title">Checks you would forget to run yourself.</h2>
     <div class="grid">
       <article class="feat reveal">
         <h3>Seller record</h3>
@@ -524,7 +540,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
 
   <section class="block" aria-labelledby="tools-title">
     <p class="kicker reveal">9 tools</p>
-    <h2 class="h2 rainbow reveal" id="tools-title">What Claude can do with it.</h2>
+    <h2 class="h2 rainbow holo reveal" id="tools-title">What Claude can do with it.</h2>
     <dl class="tools reveal">
       <div><dt>buy_data</dt><dd>Find the API for the data you ask for and return your approval link, in one step.</dd></div>
       <div><dt>list_bazaar_resources</dt><dd>Find paid x402 APIs.</dd></div>
@@ -540,7 +556,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
 
   <section class="block note reveal" aria-label="Keys">
     <p class="kicker">x402 × AI agents</p>
-    <h2 class="h2 rainbow">Agentic commerce, with you in the loop.</h2>
+    <h2 class="h2 rainbow holo">Agentic commerce, with you in the loop.</h2>
     <p>x402 turns HTTP 402 into a payment: an API names its price and an AI agent pays per call in USDC. AgentPay402 lets Claude do that from your own wallet. It holds no keys, and nothing is paid unless you sign.</p>
   </section>
 
