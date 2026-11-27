@@ -101,7 +101,9 @@ The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or
 
 ### Approval links (the connector at agentpay.x402jp.com/mcp)
 
-- One wallet can have at most **20** approval links waiting at once. Each link expires in 5 minutes, nothing is paid unless it is signed, and the per-payment and 24-hour limits are checked again when it is signed, so this number only caps how many links are open. 20 is enough to test a batch of APIs in one go. An expired, rejected or finished link frees its place at once.
+- One wallet address (when the connection URL has one), or else one connection, can have at most **20** approval links waiting at once, and the whole server at most 100. Each link expires in 5 minutes, nothing is paid unless it is signed, and the per-payment and 24-hour limits are checked again when it is signed, so these numbers only cap how many links are open. 20 is enough to test a batch of APIs in one go. An expired, rejected or finished link frees its place at once.
+- A connection is the MCP session (this server issues an `Mcp-Session-Id` at initialize) or, without one, the sending IP. Claude.ai connects from Anthropic's cloud and does not forward users' IPs, so the session is what tells users apart. Only hashes of the session id and the IP are kept, for 5 minutes.
+- Tools that fetch a seller's 402 (`request_x402_payment`, `buy_data`, `check_payment_requirements`, `check_seller`) can be called 30 times per 5 minutes per session (300 per IP when there is no session). Over that, they return `blocked` / `rate_limited` with `retry_after_s`, without contacting the seller.
 - After a payment is signed and sent, AgentPay waits up to 45 seconds for the seller's answer. If none comes, the outcome is settled from the chain: `not_delivered` (paid) when the transfer landed, or `no_response` (nothing paid) once the payment can no longer land: after the EIP-3009 `validBefore` on Base, or 3 minutes after it was built on Solana (its blockhash has expired by then). Until then `get_x402_result` returns `processing`.
 
 ## Privacy Policy

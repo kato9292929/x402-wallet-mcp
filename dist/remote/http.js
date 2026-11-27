@@ -5,6 +5,7 @@ import { registerReadOnlyTools, requestShape, ResultError, run } from "../tools.
 import { PaymentError } from "../x402/request.js";
 import { messagePage, approvalPage } from "./page.js";
 import { REMOTE_INSTRUCTIONS } from "../instructions.js";
+import { clientOf, isInitialize, newSessionId, rateLimitedResult, takeCall } from "./limits.js";
 import { ParamError, parseParams } from "./params.js";
 import { FlowError, buildPayment, buyData, getResult, pageRecord, rejectPayment, requesterFor, requestPayment, signAndPay, } from "./payments.js";
 import { getStore } from "./store.js";
@@ -18,8 +19,17 @@ import { AddressWallet } from "./wallet.js";
 async function deps() {
     return { store: await getStore() };
 }
+/** Tools that fetch a seller's 402: limited per caller, so a flood of calls does not reach sellers. */
+const RATE_LIMITED_TOOLS = new Set(["request_x402_payment", "buy_data", "check_payment_requirements", "check_seller"]);
 async function registerTools(server, params, origin, d) {
-    const register = (name, config, cb) => server.registerTool(name, config, cb);
+    const register = (name, config, cb) => server.registerTool(name, config, RATE_LIMITED_TOOLS.has(name) && d.client
+        ? async (args) => {
+            const r = await takeCall(d.store, d.client);
+            if (!r.ok)
+                return run(async () => { throw new ResultError(rateLimitedResult(r)); });
+            return cb(args);
+        }
+        : cb);
     // Read-only tools: the same as the local server's, with this owner's settings.
     registerReadOnlyTools(register, { provider: new AddressWallet(params), requester: await requesterFor(params, d), payTool: "request_x402_payment" });
     register("request_x402_payment", {
@@ -119,13 +129,21 @@ export async function handleMcp(req) {
             return json({ error: err.message }, 400);
         throw err;
     }
-    const d = await deps();
+    const d = { ...(await deps()), client: clientOf(req) };
     const origin = getPublicOrigin(req);
     const handler = createMcpHandler((server) => registerTools(server, params, origin, d), {
         serverInfo: { name: "agentpay402", version: VERSION },
         instructions: REMOTE_INSTRUCTIONS,
     });
-    return handler(req);
+    // Issue an MCP session id at initialize (the server keeps no session state): clients send it back on every
+    // request, so limits can be counted per connection rather than per IP, which many Claude.ai users share.
+    const issue = req.method === "POST" && !req.headers.get("mcp-session-id") && isInitialize(await req.clone().text());
+    const res = await handler(req);
+    if (!issue || !res.ok)
+        return res;
+    const headers = new Headers(res.headers);
+    headers.set("mcp-session-id", newSessionId());
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 const htmlHeaders = {
     "content-type": "text/html; charset=utf-8",
