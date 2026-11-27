@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>x402 AgentPay via MCP</title>
-<meta name="description" content="Agentic commerce with x402: AgentPay lets Claude pay for APIs per call in USDC on Solana and Base, checked first and signed by you in your own wallet.">
+<title>AgentPay402 MCP</title>
+<meta name="description" content="Agentic commerce with x402: AgentPay402 lets Claude pay for APIs per call in USDC on Solana and Base, checked first and signed by you in your own wallet.">
 <meta name="theme-color" content="#151517">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -158,11 +158,11 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
 </style>
 </head>
 <body>
-<section class="hero" aria-label="x402 AgentPay via MCP">
+<section class="hero" aria-label="AgentPay402 MCP">
   <div class="stage" aria-hidden="true"><canvas id="gl"></canvas><canvas id="fx"></canvas></div>
   <header class="nav">
     <div class="brand">
-      <a class="brand-name" href="/">AgentPay</a>
+      <a class="brand-name" href="/">AgentPay402</a>
       <nav class="links" aria-label="Main">
         <a href="#how">How to Pay</a>
         <a href="#paid">Paid APIs</a>
@@ -182,7 +182,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
     </div>
   </header>
   <div class="copy">
-    <h1 class="wordmark rise"><span>x402 AgentPay</span><span class="via">via MCP</span></h1>
+    <h1 class="wordmark rise"><span>AgentPay402</span><span class="via">MCP</span></h1>
   </div>
 </section>
 
@@ -216,7 +216,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
       <li class="card reveal">
         <span class="num">02</span>
         <h3>Ask Claude to buy</h3>
-        <p>Paste a paid API’s URL and say “buy this”, or let Claude find one. AgentPay checks the seller, the price, your limits and whether the payment can go through. If a check fails, Claude tells you why and nothing is prepared.</p>
+        <p>Paste a paid API’s URL and say “buy this”, or let Claude find one. AgentPay402 checks the seller, the price, your limits and whether the payment can go through. If a check fails, Claude tells you why and nothing is prepared.</p>
       </li>
       <li class="card reveal">
         <span class="num">03</span>
@@ -232,7 +232,7 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
   </section>
 
   <section class="block" id="paid" aria-labelledby="paid-title">
-    <p class="kicker reveal">Paid through AgentPay</p>
+    <p class="kicker reveal">Paid through AgentPay402</p>
     <h2 class="h2 rainbow reveal" id="paid-title">APIs Claude has already paid for.</h2>
     <p class="lede reveal">Real x402 purchases made from Claude with an approval link, signed in a browser wallet and confirmed on chain (Nov 2026). Each “Paid” opens the transaction.</p>
     <div class="paid-grid reveal">
@@ -507,15 +507,15 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
       </article>
       <article class="feat reveal">
         <h3>Confirmed on chain</h3>
-        <p>After paying, AgentPay finds the transfer on chain itself instead of trusting the seller’s reply. The same payment is never sent twice.</p>
+        <p>After paying, AgentPay402 finds the transfer on chain itself instead of trusting the seller’s reply. The same payment is never sent twice.</p>
       </article>
       <article class="feat reveal">
         <h3>Recovers non-delivery</h3>
-        <p>If a seller takes the payment but doesn’t deliver, and it publishes Delivery Receipt keys, AgentPay fetches the response again with the same payment.</p>
+        <p>If a seller takes the payment but doesn’t deliver, and it publishes Delivery Receipt keys, AgentPay402 fetches the response again with the same payment.</p>
       </article>
       <article class="feat reveal">
         <h3>Explains every stop</h3>
-        <p>When AgentPay stops or a seller refuses, Claude gets what happened, whose side the problem is on and what to do next, and nothing is paid.</p>
+        <p>When AgentPay402 stops or a seller refuses, Claude gets what happened, whose side the problem is on and what to do next, and nothing is paid.</p>
       </article>
     </div>
   </section>
@@ -539,11 +539,11 @@ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
   <section class="block note reveal" aria-label="Keys">
     <p class="kicker">x402 × AI agents</p>
     <h2 class="h2 rainbow">Agentic commerce, with you in the loop.</h2>
-    <p>x402 turns HTTP 402 into a payment: an API names its price and an AI agent pays per call in USDC. AgentPay lets Claude do that from your own wallet. It holds no keys, and nothing is paid unless you sign.</p>
+    <p>x402 turns HTTP 402 into a payment: an API names its price and an AI agent pays per call in USDC. AgentPay402 lets Claude do that from your own wallet. It holds no keys, and nothing is paid unless you sign.</p>
   </section>
 
   <footer class="foot">
-    <span>AgentPay</span>
+    <span>AgentPay402</span>
     <nav aria-label="Footer">
       <a href="https://github.com/kato9292929/x402-wallet-mcp">GitHub</a>
       <a href="https://probe.x402jp.com">Seller Probe</a>
@@ -1103,7 +1103,7 @@ function createGL() {
 
   return {
     orbit, orbitT,
-    resize() { renderer.setPixelRatio(dpr); renderer.setSize(W, H, false); rt.setSize(Math.round(W * dpr), Math.round(H * dpr)); build(); placeCamera(); },
+    resize() { lightTex.dispose(); renderer.setPixelRatio(dpr); renderer.setSize(W, H, false); rt.setSize(Math.round(W * dpr), Math.round(H * dpr)); build(); placeCamera(); },
     camera: placeCamera,
     render() {
       lightTex.needsUpdate = true;

@@ -93,7 +93,7 @@ export async function findCandidates(args, networks, capMicros, fetchImpl) {
 }
 /** Seller Probe outcomes that rule a seller out: its latest paid purchase failed or was refused. */
 export const BAD_PROBE = new Set(["not_delivered", "request_rejected", "failed", "overcharged", "invalid_target"]);
-/** Order among equally good matches: paid through AgentPay before, then calls in the last 30 days, then Probe score. */
+/** Order among equally good matches: paid through AgentPay402 before, then calls in the last 30 days, then Probe score. */
 const byRecord = (a, b) => Number(!!b.succeeded) - Number(!!a.succeeded) || b.calls30d - a.calls30d || (b.probeScore ?? -1) - (a.probeScore ?? -1);
 /**
  * Looks up Seller Probe for the five best matches and drops sellers whose latest paid purchase failed or was
@@ -120,7 +120,7 @@ export async function rankByRecord(candidates, probe, succeeded = () => false) {
 }
 /**
  * The best candidate, or null when nothing matches or the top ones cannot be told apart: the same match,
- * no difference in payments through AgentPay, calls in the last 30 days or Probe score.
+ * no difference in payments through AgentPay402, calls in the last 30 days or Probe score.
  */
 export function decide(candidates) {
     const [top, next] = candidates;

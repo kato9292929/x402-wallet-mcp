@@ -501,12 +501,12 @@ function approvalPage(d: ReturnType<BrowserWalletProvider["pageData"]>): string 
   const json = JSON.stringify({ ...d, chainParams }).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentPay 支払いの承認</title>
+<title>AgentPay402 支払いの承認</title>
 ${APPROVAL_FONTS}
 <style>
 ${APPROVAL_CSS}</style></head><body>
 <main class="card">
-<div class="brand">AgentPay</div>
+<div class="brand">AgentPay402</div>
 <div class="site"><span class="host" id="host"></span></div>
 <p class="lead">Claude がこの API に支払おうとしています</p>
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>

@@ -9,8 +9,8 @@ const SOLANA_WEB3 = {
 const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export function messagePage(title, text) {
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentPay</title>${APPROVAL_FONTS}<style>${APPROVAL_CSS}</style></head><body><main class="card">
-<div class="brand">AgentPay</div><p class="lead" style="font-size:16px;color:var(--ink);margin-top:24px">${esc(title)}</p>
+<title>AgentPay402</title>${APPROVAL_FONTS}<style>${APPROVAL_CSS}</style></head><body><main class="card">
+<div class="brand">AgentPay402</div><p class="lead" style="font-size:16px;color:var(--ink);margin-top:24px">${esc(title)}</p>
 <p class="lead">${esc(text)}</p></main></body></html>`;
 }
 export function approvalPage(rec, origin) {
@@ -37,7 +37,7 @@ export function approvalPage(rec, origin) {
     return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>AgentPay — approve a payment</title>
+<title>AgentPay402 — approve a payment</title>
 ${APPROVAL_FONTS}
 <style>${APPROVAL_CSS}
 #approve{flex:2}
@@ -45,7 +45,7 @@ ${APPROVAL_FONTS}
 .applink:hover{color:var(--ink)}
 </style></head><body>
 <main class="card">
-<div class="brand">AgentPay</div>
+<div class="brand">AgentPay402</div>
 <div class="site"><span class="host" id="host"></span></div>
 <p class="lead">Claude wants to pay for this API</p>
 <div class="amount"><b id="amount"></b><span id="chain"></span></div>

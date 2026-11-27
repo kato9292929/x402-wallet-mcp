@@ -97,7 +97,7 @@ What `make_x402_request` does, in order:
 2. **Pay** — sign, record the attempt, send.
 3. **After paying** — find the transfer on chain (the seller's header is only a hint). If the seller took the money but did not deliver, and it publishes Delivery Receipt keys, refetch once with the same payment. A payment is never sent twice.
 
-The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or `rejected_by_seller`, with the transaction, a hash of the body and the receipt. A `blocked` or `rejected_by_seller` result carries a `detail`: what happened, which side the problem is on (wallet, facilitator, seller, or AgentPay's own check) and what to do next.
+The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or `rejected_by_seller`, with the transaction, a hash of the body and the receipt. A `blocked` or `rejected_by_seller` result carries a `detail`: what happened, which side the problem is on (wallet, facilitator, seller, or AgentPay402's own check) and what to do next.
 
 ### Approval links (the connector at agentpay.x402jp.com/mcp)
 
@@ -106,7 +106,7 @@ The result says `fulfilled`, `not_delivered`, `recovered_by_retry`, `blocked` or
 - Claude.ai connects from Anthropic's cloud and does not forward users' IPs, so the session is what tells users apart there. Anthropic's published outbound ranges (`160.79.104.0/21`, `153.61.208.0/20`, from https://platform.claude.com/docs/en/api/ip-addresses) only get looser limits; they never skip them. From any other IP, all its sessions together also count toward per-IP limits: 20 waiting links and 60 calls per 5 minutes.
 - Tools that fetch a seller's 402 (`request_x402_payment`, `buy_data`, `check_payment_requirements`, `check_seller`) can be called 30 times per 5 minutes per session (300 per Anthropic IP when there is no valid session). Over that, they return `blocked` / `rate_limited` with `retry_after_s`, without contacting the seller.
 - Only hashes of session ids and IPs are kept, for 5 minutes. `/api/session-stats` shows, for today and yesterday, the share of those tool calls that came with a valid session id (no counts, ids or IPs).
-- After a payment is signed and sent, AgentPay waits up to 45 seconds for the seller's answer. If none comes, the outcome is settled from the chain: `not_delivered` (paid) when the transfer landed, or `no_response` (nothing paid) once the payment can no longer land: after the EIP-3009 `validBefore` on Base, or 3 minutes after it was built on Solana (its blockhash has expired by then). Until then `get_x402_result` returns `processing`.
+- After a payment is signed and sent, AgentPay402 waits up to 45 seconds for the seller's answer. If none comes, the outcome is settled from the chain: `not_delivered` (paid) when the transfer landed, or `no_response` (nothing paid) once the payment can no longer land: after the EIP-3009 `validBefore` on Base, or 3 minutes after it was built on Solana (its blockhash has expired by then). Until then `get_x402_result` returns `processing`.
 
 ## Privacy Policy
 
