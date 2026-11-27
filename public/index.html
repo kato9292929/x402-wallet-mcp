@@ -45,7 +45,7 @@ kbd{font-family:var(--sans);font-size:11px;color:var(--muted);border:1px solid v
 .icon-btn:hover{background:rgba(255,255,255,.06)}
 .menu{display:none}
 
-.copy{position:absolute;z-index:1;left:0;width:58%;top:50%;transform:translateY(-90%);padding:0 var(--gutter) 0 max(var(--gutter),7vw);display:flex;justify-content:flex-start;pointer-events:none}
+.copy{position:absolute;z-index:1;left:0;width:58%;top:58%;transform:translateY(-90%);padding:0 var(--gutter) 0 max(var(--gutter),7vw);display:flex;justify-content:flex-start;pointer-events:none}
 .copy>*{pointer-events:auto}
 .wordmark{font-family:var(--display);font-weight:500;font-size:clamp(40px,5vw,76px);line-height:1;letter-spacing:-.035em;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;column-gap:.35em}
 .wordmark{flex-direction:column;align-items:flex-start;row-gap:.4em;font-size:clamp(44px,5.8vw,104px);text-align:left;text-shadow:0 2px 24px rgba(0,0,0,.45)}
@@ -616,7 +616,7 @@ function layout() {
   ldpr = mobile ? Math.min(dpr, 1.5) : dpr;
   if (!mobile) {
     S = Math.min(W * 0.36, H * 0.62);
-    cx = 0.66 * W; cy = 0.53 * H;
+    cx = 0.66 * W; cy = 0.6 * H;
   } else {
     S = Math.min(W * 0.72, H * 0.40, 400);
     const cb = copyEl.getBoundingClientRect().bottom - r.top;
