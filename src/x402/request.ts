@@ -10,7 +10,39 @@ import { NeverminedPayer, neverminedConfigured, neverminedEnvironment } from "..
 import { buildX402Client, type WalletProvider } from "../providers/index.js";
 import { findPayment as defaultFindPayment, payerKeyOf, type ChainResult, type FindOptions, type PayerKey } from "../safe/chain.js";
 import { checkInput } from "../safe/input.js";
-import { activeRefusals, readNetFailures, recordNetFailure, netFailuresPath } from "../safe/netfail.js";
+import {
+  WALLET_INCOMPATIBLE_FEE_PAYERS,
+  readSuccesses,
+  recordSuccess,
+  successesPath,
+  activeFeePayerRefusals,
+  activeRefusals,
+  feePayerRefusalsPath,
+  netFailuresPath,
+  readFeePayerRefusals,
+  readNetFailures,
+  recordFeePayerRefusal,
+  recordNetFailure,
+  refusesWalletInstructions,
+  type FeePayerRefusal,
+  type NetRefusal,
+} from "../safe/netfail.js";
+import { checkPayToAccount, type PayToAccount, type PayToCheck } from "../safe/payto.js";
+import {
+  KNOWN_GOOD_FEE_PAYERS,
+  SUCCESS_TTL_MS,
+  sellerNetworkAvoid,
+  verifiedFamily,
+  type SuccessRecord,
+} from "../safe/known.js";
+import { rpcCall } from "../safe/rpc.js";
+import {
+  facilitatorIncompatibleDetail,
+  networkAvoidedDetail,
+  payToAccountMissingDetail,
+  refusalDetail,
+  walletDelegatedDetail,
+} from "./explain.js";
 import { lookupProbe, probeHost, probeSummary, reportToProbe, type ProbeLookup, type ProbeReport } from "../safe/probe.js";
 import {
   RECEIPT_HEADER,
@@ -35,6 +67,10 @@ export interface HttpRequestInput {
   method?: string;
   headers?: Record<string, string>;
   body?: string | Record<string, unknown> | unknown[];
+  /** Pay through a facilitator known to refuse browser-wallet (Phantom) transactions anyway (for testing). */
+  allowIncompatibleFacilitator?: boolean;
+  /** Pay on this network only ("base" or "solana"); otherwise the network a payment is known to go through is chosen. */
+  network?: "base" | "solana";
 }
 
 /** A signed exact-scheme payment: the headers to send and the payload they encode. */
@@ -60,13 +96,45 @@ export interface Deps {
   findPayment?: (k: PayerKey, headerTx: string | null) => Promise<ChainResult>;
   /** Options for the default on-chain search. */
   findOptions?: FindOptions;
+  /** Gives up waiting for the seller's answer to the paid request after this many ms (the payment may still land). */
+  sellerTimeoutMs?: number;
+  /** Overrides where facilitators that refused wallet-rewritten transactions are kept (the remote server keeps them in its store). */
+  feePayerRefusals?: { read(): Promise<FeePayerRefusal[]>; record(feePayer: string, reason: string, host: string): Promise<void> };
+  feePayerRefusalsFile?: string;
+  /** Overrides the check that a Solana payTo has a receiving token account (tests). */
+  checkPayTo?: PayToCheck;
+  /** Overrides where successful payments are remembered (the remote server keeps them in its store). */
+  successRecords?: { read(): Promise<SuccessRecord[]>; record(r: SuccessRecord): Promise<void> };
+  successFile?: string;
+  /** Overrides reading a wallet's contract code on an EVM chain (tests): the code, or null when the RPC could not tell. */
+  walletCode?: (network: string, address: string) => Promise<string | null>;
   /** Where (host, network) refusals are remembered. */
   netFailuresFile?: string;
+  /** Overrides where refusals are kept (the remote server keeps them in its store). */
+  netFailures?: NetFailureStore;
   report?: (r: ProbeReport) => Promise<boolean>;
 }
 
 const MAX_BODY_CHARS = 100_000;
 const SDK_LABEL = "x402-wallet-mcp";
+
+export interface NetFailureStore {
+  read(host: string): Promise<NetRefusal[]>;
+  record(host: string, network: string, reason: string): Promise<void>;
+}
+
+/** Everything the pre-payment checks decided, ready to be signed and sent. */
+export interface Prepared {
+  kind: "ready";
+  input: HttpRequestInput;
+  cfg: SpendConfig;
+  host: string;
+  rawPaymentRequired: Record<string, unknown>;
+  selected: Requirement;
+  probeOut: unknown;
+  warnings: string[];
+  priceCheck?: Record<string, unknown>;
+}
 
 export class PaymentError extends Error {
   constructor(
@@ -85,7 +153,12 @@ export type BlockedReason =
   | "over_cap"
   | "price_mismatch"
   | "network_avoided"
-  | "host_not_allowed";
+  | "host_not_allowed"
+  | "not_approved"
+  | "facilitator_incompatible"
+  | "payto_account_missing"
+  | "offer_changed"
+  | "wallet_delegated";
 
 function buildInit(input: HttpRequestInput, extraHeaders: Record<string, string> = {}): RequestInit {
   const method = (input.method ?? "GET").toUpperCase();
@@ -124,6 +197,35 @@ function bodyFrom(bytes: Uint8Array, contentType: string): BodyOut {
     body_sha256: createHash("sha256").update(bytes).digest("hex"),
     bytes,
   };
+}
+
+/** The seller's stated reason for refusing a payment: the PAYMENT-REQUIRED error, or the JSON body's error / invalidReason / reason. */
+export function refusalReason(getHeader: (name: string) => string | null | undefined, bodyText: string): string {
+  const fromPr = parsePaymentRequired(getHeader, bodyText)?.error;
+  if (typeof fromPr === "string" && fromPr) return fromPr.slice(0, 300);
+  try {
+    const j = JSON.parse(bodyText);
+    for (const k of ["error", "invalidReason", "reason", "message"]) {
+      if (typeof j?.[k] === "string" && j[k]) return j[k].slice(0, 300);
+    }
+  } catch {
+    // not JSON
+  }
+  return "";
+}
+
+/**
+ * Whether a refusal says the network itself is not accepted, e.g. "unsupported_network" or
+ * "invalid_exact_evm_network_mismatch". Only these make a network avoided for 24 hours; a bad,
+ * expired or unexplained payment (BlockhashNotFound, signature checks, no reason) does not.
+ */
+export function refusesNetwork(reason: string): boolean {
+  return /unsupported[_ -]?network|network[_ -]?mismatch|invalid[_ -]?network|network[_ -]?not[_ -]?(supported|accepted|allowed)/i.test(reason);
+}
+
+/** Whether a refusal says settlement was attempted (it may have reached the chain), so the chain is still checked. */
+export function refusedAtSettlement(reason: string): boolean {
+  return /settle|transaction[_ -]?failed|time[d]?[_ -]?out|confirm/i.test(reason);
 }
 
 async function readBody(res: Response): Promise<BodyOut> {
@@ -170,15 +272,138 @@ export class X402Requester {
     this.log = deps.log ?? defaultLog;
   }
 
-  selectionContext(cfg: SpendConfig, avoidNetworks: string[] = []): SelectionContext {
+  selectionContext(
+    cfg: SpendConfig,
+    avoidNetworks: string[] = [],
+    avoidFeePayers: Record<string, string> = {},
+    policy?: { networkRank?: (r: Requirement) => number; family?: "evm" | "solana" },
+  ): SelectionContext {
+    const chains = this.deps.provider?.chains() ?? [];
     return {
+      networkRank: policy?.networkRank,
+      avoidFeePayers,
       priority: schemePriority(),
-      walletChains: this.deps.provider?.chains() ?? [],
+      walletChains: policy?.family ? chains.filter((c) => chainInfo(c)?.family === policy.family) : chains,
+      preferNetworks: this.deps.provider?.preferredChains?.() ?? [],
       mode: cfg.network,
       nevermined: neverminedConfigured(),
       neverminedEnv: neverminedEnvironment(),
       avoidNetworks,
     };
+  }
+
+  /**
+   * How a browser-wallet payment picks among a seller's networks (the user's explicit `network` wins):
+   *   0  a network this seller was paid on successfully (built-in list or remembered), or a Solana facilitator
+   *      that settled a remembered payment
+   *   1  Solana through a facilitator known to settle Phantom-signed payments (PayAI, ...)
+   *   2  Base (a plain wallet's EIP-3009 authorization has gone through for every seller so far)
+   *   3  Solana through a facilitator not seen yet
+   * A seller's network that keeps failing (SELLER_NETWORK_AVOID) is not used. Key-holding wallets keep the price order.
+   */
+  async networkPolicy(host: string, input?: HttpRequestInput) {
+    const family = input?.network === "base" ? ("evm" as const) : input?.network === "solana" ? ("solana" as const) : undefined;
+    const avoid = sellerNetworkAvoid(host);
+    if (this.deps.provider?.id !== "browser") return { family, avoidFamily: undefined, networkRank: undefined };
+    const learned = await this.successes();
+    const h = host.toLowerCase().replace(/^www\./, "");
+    const sameHost = (x: string) => {
+      const l = x.toLowerCase().replace(/^www\./, "");
+      return h === l || h.endsWith("." + l) || l.endsWith("." + h);
+    };
+    const verified = verifiedFamily(host);
+    const networkRank = (r: Requirement): number => {
+      const fam = chainInfo(r.network)?.family;
+      const feePayer = typeof r.extra?.feePayer === "string" ? r.extra.feePayer : undefined;
+      if (learned.some((s) => sameHost(s.host) && s.network === r.network)) return 0;
+      if (verified.has(fam === "evm" ? "base" : "solana")) return 0;
+      if (fam === "solana" && feePayer && learned.some((s) => s.feePayer === feePayer)) return 0;
+      if (fam === "solana" && feePayer && KNOWN_GOOD_FEE_PAYERS[feePayer]) return 1;
+      if (fam === "evm") return 2;
+      return 3;
+    };
+    return { family, avoidFamily: avoid?.family, networkRank };
+  }
+
+  /** Successful payments remembered in the last 30 days. */
+  private async successes(): Promise<SuccessRecord[]> {
+    const all = this.deps.successRecords ? await this.deps.successRecords.read() : await readSuccesses(this.deps.successFile ?? successesPath());
+    const now = Date.now();
+    return all.filter((s) => now - Date.parse(s.ts) < SUCCESS_TTL_MS);
+  }
+
+  /** Networks of `accepts` to leave out for this seller (a network that keeps failing for it). */
+  private sellerAvoided(accepts: Requirement[], avoidFamily?: "evm" | "solana"): string[] {
+    return avoidFamily ? accepts.filter((r) => chainInfo(r.network)?.family === avoidFamily).map((r) => r.network) : [];
+  }
+
+  /**
+   * Solana facilitators to avoid (fee payer → why): only when a browser wallet signs (it rewrites the
+   * transaction), and not when the caller asked to pay through them anyway. The built-in list plus
+   * facilitators that refused a wallet-rewritten payment in the last 7 days.
+   */
+  async feePayersToAvoid(input?: HttpRequestInput): Promise<Record<string, string>> {
+    if (this.deps.provider?.id !== "browser" || input?.allowIncompatibleFacilitator) return {};
+    const learned = this.deps.feePayerRefusals
+      ? await this.deps.feePayerRefusals.read()
+      : await readFeePayerRefusals(this.deps.feePayerRefusalsFile ?? feePayerRefusalsPath());
+    const out: Record<string, string> = { ...WALLET_INCOMPATIBLE_FEE_PAYERS };
+    for (const r of activeFeePayerRefusals(learned)) {
+      out[r.feePayer] ??= `refused a wallet-signed payment with ${r.reason} (${r.ts.slice(0, 10)}${r.host ? `, ${r.host}` : ""})`;
+    }
+    return out;
+  }
+
+  /** For a Solana option: whether payTo has the account that receives the token. Other networks: null. */
+  async payToAccount(r: Requirement): Promise<PayToAccount | null> {
+    if (r.scheme !== "exact" || chainInfo(r.network)?.family !== "solana" || !r.payTo || !r.asset) return null;
+    return (this.deps.checkPayTo ?? ((n, p, m) => checkPayToAccount(n, p, m)))(r.network, r.payTo, r.asset);
+  }
+
+  /**
+   * Picks the option to pay like selectRequirement, but skips a Solana option whose payTo cannot receive
+   * the token: another option the seller offers (such as Base) is chosen instead. `skipped` is the first
+   * option skipped that way, with its account check.
+   */
+  async choose(accepts: Requirement[], ctx: SelectionContext) {
+    const evaluated = evaluate(accepts, ctx);
+    const excluded = new Set<Requirement>();
+    let skipped: { requirement: Requirement; account: PayToAccount } | undefined;
+    for (;;) {
+      const selected = selectRequirement(accepts.filter((a) => !excluded.has(a)), ctx);
+      if (!selected) return { selected: undefined, evaluated, account: null, skipped };
+      const account = await this.payToAccount(selected);
+      if (account?.exists !== false) return { selected, evaluated, account, skipped };
+      skipped ??= { requirement: selected, account };
+      excluded.add(selected);
+    }
+  }
+
+  /**
+   * An EVM wallet with an EIP-7702 delegation (code 0xef0100 + delegate) has every EIP-3009 signature checked
+   * through the delegate's isValidSignature, which refuses the wallet's plain signature: USDC and the
+   * facilitators then reject the payment. Returns the delegate when the wallet that will sign is delegated.
+   */
+  async delegationOf(selected: Requirement): Promise<{ delegate?: string; payer?: string; unknown?: string } | null> {
+    if (this.deps.provider?.id !== "browser" || chainInfo(selected.network)?.family !== "evm") return null;
+    let payer: string;
+    try {
+      payer = await this.deps.provider.address(selected.network);
+    } catch {
+      return null; // chosen on the approval page; checked again there
+    }
+    const read = this.deps.walletCode ?? (async (network: string, address: string) => {
+      try {
+        return (await rpcCall<string>(network, "eth_getCode", [address, "latest"], { attempts: 1, timeoutMs: 8000 })).result;
+      } catch {
+        return null;
+      }
+    });
+    const code = await read(selected.network, payer);
+    if (code === null) return { payer, unknown: "could not read the wallet's code (RPC unavailable)" };
+    if (/^0xef0100[0-9a-f]{40}$/i.test(code)) return { payer, delegate: "0x" + code.slice(8) };
+    if (code !== "0x" && code !== "") return { payer, unknown: "the wallet has contract code; whether it can sign this payment is not known" };
+    return null;
   }
 
   /** Fetches the URL without paying and returns the parsed 402 (if any). */
@@ -238,7 +463,7 @@ export class X402Requester {
   }
 
   private async refusalsFor(host: string, probe: ProbeLookup | null) {
-    const all = await readNetFailures(this.deps.netFailuresFile ?? netFailuresPath());
+    const all = this.deps.netFailures ? await this.deps.netFailures.read(host) : await readNetFailures(this.deps.netFailuresFile ?? netFailuresPath());
     const lastPaid = probe?.status === "scored" ? (probe.last_paid?.ts ?? null) : null;
     return activeRefusals(all, host, lastPaid);
   }
@@ -271,7 +496,8 @@ export class X402Requester {
       };
     }
     const pr = probe.paymentRequired;
-    const ctx = this.selectionContext(cfg);
+    const policy = await this.networkPolicy(probeHost(input.url) ?? new URL(input.url).hostname, input);
+    const ctx = this.selectionContext(cfg, this.sellerAvoided(pr.accepts, policy.avoidFamily), await this.feePayersToAvoid(input), policy);
     const evaluated = evaluate(pr.accepts, ctx);
     const selected = selectRequirement(pr.accepts, ctx);
     let withinLimits: boolean | undefined;
@@ -325,9 +551,31 @@ export class X402Requester {
     }
     const pr = first.paymentRequired;
     const input_check = checkInput(pr.raw, input);
-    const ctx = this.selectionContext(cfg, refusals.map((r) => r.network));
-    const evaluated = evaluate(pr.accepts, ctx);
-    const selected = selectRequirement(pr.accepts, ctx);
+    const avoidFeePayers = await this.feePayersToAvoid(input);
+    const policy = await this.networkPolicy(host, input);
+    const ctx = this.selectionContext(cfg, [...refusals.map((r) => r.network), ...this.sellerAvoided(pr.accepts, policy.avoidFamily)], avoidFeePayers, policy);
+    // The same checks request_x402_payment makes before a link: facilitator compatibility, payTo's receiving
+    // account (a Solana option that cannot receive is skipped for another one) and the paying wallet's delegation.
+    const { selected, evaluated, account: payto_account, skipped } = await this.choose(pr.accepts, ctx);
+    const byFacilitator = evaluated.filter((c) => c.avoidedBy === "facilitator");
+    let would_block: Record<string, unknown> | null = null;
+    if (!selected && skipped) {
+      const s = skipped.requirement;
+      would_block = {
+        blocked_reason: "payto_account_missing",
+        detail: payToAccountMissingDetail({ payTo: s.payTo!, ata: skipped.account.ata, asset: s.asset, network: s.network }),
+      };
+    } else if (!selected && byFacilitator.length) {
+      const avoided = byFacilitator.map((c) => ({ feePayer: c.feePayer!, network: c.requirement.network, why: avoidFeePayers[c.feePayer!] }));
+      would_block = { blocked_reason: "facilitator_incompatible", facilitators: avoided, detail: facilitatorIncompatibleDetail(avoided) };
+    }
+    const delegation = selected ? await this.delegationOf(selected) : null;
+    if (!would_block && delegation?.delegate) {
+      would_block = {
+        blocked_reason: "wallet_delegated",
+        detail: walletDelegatedDetail({ payer: delegation.payer!, delegate: delegation.delegate, network: selected!.network }),
+      };
+    }
     const prices = await Promise.all(
       pr.accepts.filter((a) => a.scheme === "exact").map(async (a) => ({
         network: a.network,
@@ -353,6 +601,10 @@ export class X402Requester {
       input: { ok: input_check.ok, missing: input_check.missing, unset_examples: input_check.unsetExamples, declared_in: input_check.declared.source },
       bazaar_price: prices,
       would_pay: selected ? describeRequirement(selected) : null,
+      facilitators_avoided: byFacilitator.map((c) => ({ network: c.requirement.network, feePayer: c.feePayer, reason: c.reason })),
+      payto_account,
+      payto_account_skipped: skipped ? { network: skipped.requirement.network, payTo: skipped.requirement.payTo, ...skipped.account } : null,
+      would_block,
       within_limits,
       limit_reason,
     };
@@ -393,14 +645,39 @@ export class X402Requester {
    * make_x402_request. Stops before signing on any blocking condition; after paying, decides
    * whether money moved from the chain (the seller's settlement header is only a hint).
    */
+  /**
+   * make_x402_request: prepare (checks), sign, pay. Stops before signing on any blocking
+   * condition; after paying, decides whether money moved from the chain.
+   */
   async request(input: HttpRequestInput) {
+    const prep = await this.prepare(input);
+    if (prep.kind === "result") return prep.result;
+    const { cfg, selected, probeOut, warnings } = prep;
+    if (selected.scheme === NVM_SCHEME) return this.payNevermined(input, cfg, selected, probeOut, warnings);
+    let payment: ExactPayment;
+    try {
+      await this.deps.provider?.beforeSign?.({ url: input.url, network: selected.network, amount: selected.amount, payTo: selected.payTo });
+      payment = await this.exactPayment({ ...prep.rawPaymentRequired, accepts: [selected.raw] });
+    } catch (err) {
+      if ((err as Error).name === "ApprovalError") return this.blocked(input, "not_approved", (err as Error).message, { probe: probeOut });
+      throw err;
+    }
+    return this.payPrepared(prep, payment);
+  }
+
+  /**
+   * Steps 1-6: every check before signing. Returns either a final result (blocked, or the
+   * endpoint did not ask for payment) or the selected payment option, ready to sign.
+   */
+  async prepare(input: HttpRequestInput): Promise<{ kind: "result"; result: any } | Prepared> {
+    const done = (result: any) => ({ kind: "result" as const, result });
     // 1. config, allowed hosts
     const cfg = await this.loadCfg();
     const host = probeHost(input.url) ?? new URL(input.url).hostname;
     try {
       this.deps.guard.checkHost(cfg, input.url);
     } catch (err) {
-      return this.blocked(input, "host_not_allowed", (err as Error).message);
+      return done(this.blocked(input, "host_not_allowed", (err as Error).message));
     }
 
     // 2. Seller Probe
@@ -409,7 +686,7 @@ export class X402Requester {
     const warnings: string[] = [];
     if (probe?.status === "scored" && probe.verdict === "not_delivered") {
       const msg = `Seller Probe's latest paid purchase from ${host} was paid but not delivered (${probe.last_paid?.ts ?? "date unknown"}).`;
-      if (cfg.probeMode === "block") return this.blocked(input, "probe_not_delivered", `${msg} Payment was not made.`, { probe: probeOut });
+      if (cfg.probeMode === "block") return done(this.blocked(input, "probe_not_delivered", `${msg} Payment was not made.`, { probe: probeOut }));
       warnings.push(msg);
     }
 
@@ -417,7 +694,7 @@ export class X402Requester {
     const first = await this.probe(input);
     if (first.status !== 402) {
       const body = await readBody(first.response);
-      return {
+      return done({
         url: input.url,
         status: (first.response.ok ? "fulfilled" : "rejected_by_seller") as BuyStatus,
         http_status: first.status,
@@ -434,7 +711,7 @@ export class X402Requester {
         probe: probeOut,
         warnings: warnings.length ? warnings : undefined,
         note: "The endpoint did not ask for payment (no HTTP 402); nothing was paid.",
-      };
+      });
     }
     if (!first.paymentRequired) {
       throw new PaymentError(
@@ -454,23 +731,42 @@ export class X402Requester {
       );
     }
     if (!inputCheck.ok) {
-      return this.blocked(input, "missing_input", `The 402 declares input this request does not carry: ${inputCheck.missing.join("; ")}. Payment was not made.`, {
+      return done(this.blocked(input, "missing_input", `The 402 declares input this request does not carry: ${inputCheck.missing.join("; ")}. Payment was not made.`, {
         missing: inputCheck.missing,
         probe: probeOut,
-      });
+      }));
     }
 
     // 6 (selection). (host, network) refusals: never pick a network refused recently.
     const refusals = await this.refusalsFor(host, probe);
-    const ctx = this.selectionContext(cfg, refusals.map((r) => r.network));
-    const evaluated = evaluate(pr.accepts, ctx);
-    const selected = selectRequirement(pr.accepts, ctx);
+    const avoidFeePayers = await this.feePayersToAvoid(input);
+    const policy = await this.networkPolicy(host, input);
+    const ctx = this.selectionContext(cfg, [...refusals.map((r) => r.network), ...this.sellerAvoided(pr.accepts, policy.avoidFamily)], avoidFeePayers, policy);
+    const { selected, evaluated, account, skipped } = await this.choose(pr.accepts, ctx);
     if (!selected) {
-      if (evaluated.some((c) => c.avoided)) {
-        return this.blocked(input, "network_avoided", "Every payable network for this seller refused a payment recently. Payment was not made.", {
-          refusals: refusals.map((r) => ({ network: r.network, at: r.ts })),
+      const byFacilitator = evaluated.filter((c) => c.avoidedBy === "facilitator");
+      if (skipped) {
+        const s = skipped.requirement;
+        return done(this.blocked(input, "payto_account_missing", `The seller's address ${s.payTo} has no account to receive this token on ${s.network}. Payment was not made.`, {
+          payto_account: skipped.account,
+          detail: payToAccountMissingDetail({ payTo: s.payTo!, ata: skipped.account.ata, asset: s.asset, network: s.network }),
           probe: probeOut,
-        });
+        }));
+      }
+      if (byFacilitator.length) {
+        const avoided = byFacilitator.map((c) => ({ feePayer: c.feePayer!, network: c.requirement.network, why: avoidFeePayers[c.feePayer!] }));
+        return done(this.blocked(input, "facilitator_incompatible", "Every option this seller offers settles through a facilitator that refuses transactions signed in Phantom. Payment was not made.", {
+          facilitators: avoided,
+          detail: facilitatorIncompatibleDetail(avoided),
+          probe: probeOut,
+        }));
+      }
+      if (evaluated.some((c) => c.avoided)) {
+        return done(this.blocked(input, "network_avoided", "Every payable network for this seller refused a payment recently. Payment was not made.", {
+          refusals: refusals.map((r) => ({ network: r.network, at: r.ts })),
+          detail: networkAvoidedDetail(refusals.map((r) => r.network)),
+          probe: probeOut,
+        }));
       }
       throw new PaymentError("None of the payment options offered by the endpoint can be paid by this wallet.", {
         accepts: evaluated.map((c) => ({ ...describeRequirement(c.requirement), reason: c.reason })),
@@ -481,27 +777,48 @@ export class X402Requester {
     let priceCheck: Record<string, unknown> | undefined;
     if (selected.scheme !== NVM_SCHEME) {
       if (selected.priceMicros === undefined) {
-        return this.blocked(input, "over_cap", "Price could not be converted to USD; refusing to pay.", { probe: probeOut });
+        return done(this.blocked(input, "over_cap", "Price could not be converted to USD; refusing to pay.", { probe: probeOut }));
       }
       try {
         this.deps.guard.checkAmount(cfg, selected.priceMicros);
       } catch (err) {
-        return this.blocked(input, "over_cap", (err as Error).message, { code: (err as SpendLimitError).code, probe: probeOut });
+        return done(this.blocked(input, "over_cap", (err as Error).message, { code: (err as SpendLimitError).code, probe: probeOut }));
       }
       if (cfg.priceMismatch !== "off") {
         priceCheck = this.priceCheck(await this.bazaarPrice(input.url, selected.network), selected);
         if (priceCheck.matches === false) {
           const msg = `The 402 asks ${selected.amount} but the Bazaar lists ${priceCheck.listed} (atomic USDC on ${selected.network}).`;
-          if (cfg.priceMismatch === "block") return this.blocked(input, "price_mismatch", `${msg} Payment was not made.`, { price_check: priceCheck, probe: probeOut });
+          if (cfg.priceMismatch === "block") return done(this.blocked(input, "price_mismatch", `${msg} Payment was not made.`, { price_check: priceCheck, probe: probeOut }));
           warnings.push(msg);
         }
       }
     }
 
-    // 7. sign; record the payer key before sending
+    // Solana: the seller's receiving token account must exist, or the transfer fails (choose() skipped such options).
+    if (skipped) {
+      warnings.push(`The seller's ${skipped.requirement.network} address cannot receive the token (no receiving account), so this is paid on ${selected.network} instead.`);
+    }
+    if (account?.exists === null) warnings.push(`Could not confirm that the seller's address has an account to receive the token (${account.error ?? "RPC unavailable"}).`);
+
+    // EVM: a wallet with an EIP-7702 delegation cannot sign this payment.
+    const delegation = await this.delegationOf(selected);
+    if (delegation?.delegate) {
+      return done(this.blocked(input, "wallet_delegated", `The paying wallet ${delegation.payer} has an EIP-7702 delegation, so its signature for this payment would be rejected. Payment was not made.`, {
+        delegate: delegation.delegate,
+        detail: walletDelegatedDetail({ payer: delegation.payer!, delegate: delegation.delegate, network: selected.network }),
+        probe: probeOut,
+      }));
+    }
+    if (delegation?.unknown) warnings.push(`Could not confirm the paying wallet can sign this payment: ${delegation.unknown}.`);
+
+    return { kind: "ready", input, cfg, host, rawPaymentRequired: pr.raw, selected, probeOut, warnings, priceCheck };
+  }
+
+  /** Steps 7-10 for a signed exact-scheme payment: send it, then let the chain decide whether money moved. */
+  async payPrepared(prep: Prepared, payment: ExactPayment) {
+    const { input, cfg, host, selected, probeOut, priceCheck } = prep;
+    const warnings = [...prep.warnings];
     const started = Date.now();
-    if (selected.scheme === NVM_SCHEME) return this.payNevermined(input, cfg, selected, probeOut, warnings);
-    const payment = await this.exactPayment({ ...pr.raw, accepts: [selected.raw] });
     let payerKey: PayerKey | null = null;
     try {
       const payerAddress = this.deps.provider ? await this.deps.provider.address(selected.network) : "";
@@ -524,7 +841,9 @@ export class X402Requester {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(input.url, buildInit(input, payment.headers));
+      const init = buildInit(input, payment.headers);
+      if (this.deps.sellerTimeoutMs) init.signal = AbortSignal.timeout(this.deps.sellerTimeoutMs);
+      res = await this.fetchImpl(input.url, init);
     } catch (err) {
       // The signed payment may or may not have reached the seller; keep it counted, never re-send.
       throw new PaymentError(`Request failed after signing the payment: ${(err as Error).message}. It was not re-sent.`, {
@@ -538,8 +857,16 @@ export class X402Requester {
     const headerTx = headerTxOf(settle);
     const body = await readBody(res);
     const latency = Date.now() - started;
+    // A 4xx with no transaction in the settlement header: the seller refused the payment before
+    // settling it, so the result is returned at once instead of searching the chain. When the reason
+    // says settlement was attempted (it may have landed), the chain is still checked.
+    const reason = res.status === 200 ? "" : refusalReason(getHeader, body.encoding === "text" ? body.body : "");
+    const refusedOutright = res.status >= 400 && res.status < 500 && !headerTx && !refusedAtSettlement(reason);
     let chain: ChainResult;
-    if (payerKey) {
+    if (refusedOutright) {
+      chain = { settlement: "not_found", tx: null, transferred: null, headerTxMatched: null };
+      warnings.push(`The seller refused the payment (HTTP ${res.status}${reason ? `: ${reason}` : ""}) and returned no transaction, so it was not looked up on chain.`);
+    } else if (payerKey) {
       chain = this.deps.findPayment
         ? await this.deps.findPayment(payerKey, headerTx)
         : await defaultFindPayment(payerKey, headerTx, this.deps.findOptions);
@@ -554,6 +881,7 @@ export class X402Requester {
     let receiptHeader = getHeader(RECEIPT_HEADER);
     let refetched = false;
     let refetchResult: Record<string, unknown> | undefined;
+    let detail: string | undefined;
     const wk = await this.wellKnown(input.url);
     const paymentId = payerKey ? (payerKey.family === "evm" ? payerKey.key : chain.tx) : null;
 
@@ -589,11 +917,43 @@ export class X402Requester {
     } else if (chain.settlement === "not_found") {
       status = "rejected_by_seller";
       this.deps.guard.release(reserved);
-      await recordNetFailure(host, selected.network, `HTTP ${res.status} after payment, no transfer`, this.deps.netFailuresFile ?? netFailuresPath());
+      if (refusesNetwork(reason)) {
+        const note = `HTTP ${res.status} after payment, no transfer: ${reason}`;
+        if (this.deps.netFailures) await this.deps.netFailures.record(host, selected.network, note);
+        else await recordNetFailure(host, selected.network, note, this.deps.netFailuresFile ?? netFailuresPath());
+      }
+      // A facilitator that refused the instructions a browser wallet added is avoided for 7 days.
+      const feePayer = typeof selected.extra?.feePayer === "string" ? selected.extra.feePayer : undefined;
+      let learned = false;
+      if (feePayer && this.deps.provider?.id === "browser" && chainInfo(selected.network)?.family === "solana" && refusesWalletInstructions(reason)) {
+        if (this.deps.feePayerRefusals) await this.deps.feePayerRefusals.record(feePayer, reason, host);
+        else await recordFeePayerRefusal(feePayer, reason, host, this.deps.feePayerRefusalsFile ?? feePayerRefusalsPath());
+        learned = true;
+      }
+      detail = refusalDetail({
+        reason,
+        httpStatus: res.status,
+        settlement: refusedOutright ? "not_checked" : chain.settlement,
+        network: selected.network,
+        feePayer,
+        learned,
+      });
     } else {
       // Could not tell whether money moved: not re-sent, kept counted.
       status = "not_delivered";
       warnings.push("Could not confirm on chain whether the payment landed (all RPCs failed); it was not re-sent and is counted as spent.");
+    }
+
+    // A browser-wallet payment that went through: this seller's network (and its Solana facilitator) is preferred next time.
+    if ((status === "fulfilled" || status === "recovered_by_retry") && chain.settlement !== "not_found" && this.deps.provider?.id === "browser") {
+      const rec: SuccessRecord = {
+        ts: new Date().toISOString(),
+        host,
+        network: selected.network,
+        ...(typeof selected.extra?.feePayer === "string" ? { feePayer: selected.extra.feePayer } : {}),
+      };
+      if (this.deps.successRecords) await this.deps.successRecords.record(rec);
+      else await recordSuccess(rec, this.deps.successFile ?? successesPath());
     }
 
     // Receipt on a 200 first delivery
@@ -619,7 +979,8 @@ export class X402Requester {
       priceUsd: formatMicros(reserved),
       http_status: res.status,
       status,
-      settlement: chain.settlement,
+      settlement: refusedOutright ? "not_checked" : chain.settlement,
+      refusal_reason: reason || undefined,
       transaction: chain.tx,
       header_tx: headerTx,
       header_tx_matched: chain.headerTxMatched,
@@ -659,7 +1020,9 @@ export class X402Requester {
           encoding: finalBody.encoding,
           truncated: finalBody.truncated,
           tx: txOut,
-          settlement: chain.settlement,
+          settlement: refusedOutright ? "not_checked" : chain.settlement,
+          refusal_reason: reason || undefined,
+          detail,
           header_tx_matched: chain.headerTxMatched,
           body_sha256: finalBody.body_sha256,
           receipt,

@@ -5,3 +5,7 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+.try-phantom/
+.next/
+next-env.d.ts
+*.tsbuildinfo

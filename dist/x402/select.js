@@ -14,7 +14,7 @@ function nvmEnvIsTestnet(env) {
 export function evaluate(accepts, ctx) {
     return accepts.map((r) => {
         if (ctx.avoidNetworks?.includes(r.network)) {
-            return { requirement: r, usable: false, reason: `this seller refused a payment on ${r.network} recently`, avoided: true };
+            return { requirement: r, usable: false, reason: `this seller refused a payment on ${r.network} recently`, avoided: true, avoidedBy: "network" };
         }
         if (!ctx.priority.includes(r.scheme)) {
             return { requirement: r, usable: false, reason: `scheme "${r.scheme}" is not in SCHEME_PRIORITY (${ctx.priority.join(",")})` };
@@ -61,6 +61,18 @@ export function evaluate(accepts, ctx) {
                     reason: `asset ${r.asset} on ${r.network} is not a known USD stablecoin, so it cannot be checked against the USD limits`,
                 };
             }
+            const feePayer = r.network.startsWith("solana:") && typeof r.extra?.feePayer === "string" ? r.extra.feePayer : undefined;
+            const why = feePayer ? ctx.avoidFeePayers?.[feePayer] : undefined;
+            if (feePayer && why) {
+                return {
+                    requirement: r,
+                    usable: false,
+                    reason: `its facilitator (fee payer ${feePayer}) refuses the transactions Phantom signs, because Phantom adds safety-check instructions that read the fee payer; it ${why}`,
+                    avoided: true,
+                    avoidedBy: "facilitator",
+                    feePayer,
+                };
+            }
             return { requirement: r, usable: true };
         }
         return { requirement: r, usable: false, reason: `scheme "${r.scheme}" is not implemented` };
@@ -68,7 +80,7 @@ export function evaluate(accepts, ctx) {
 }
 /**
  * Picks the requirement to pay: the first usable scheme in priority order,
- * cheapest first within a scheme.
+ * cheapest first within a scheme, then by preferNetworks, then by the seller's order.
  */
 export function selectRequirement(accepts, ctx) {
     const usable = evaluate(accepts, ctx)
@@ -79,9 +91,23 @@ export function selectRequirement(accepts, ctx) {
         const pb = ctx.priority.indexOf(b.scheme);
         if (pa !== pb)
             return pa - pb;
+        if (ctx.networkRank) {
+            const na = ctx.networkRank(a);
+            const nb = ctx.networkRank(b);
+            if (na !== nb)
+                return na - nb;
+        }
         const ca = a.priceMicros ?? 0n;
         const cb = b.priceMicros ?? 0n;
-        return ca < cb ? -1 : ca > cb ? 1 : a.index - b.index;
+        if (ca !== cb)
+            return ca < cb ? -1 : 1;
+        const rank = (n) => {
+            const i = ctx.preferNetworks?.indexOf(n) ?? -1;
+            return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+        };
+        const ra = rank(a.network);
+        const rb = rank(b.network);
+        return ra !== rb ? ra - rb : a.index - b.index;
     });
     return usable[0];
 }

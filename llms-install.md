@@ -2,6 +2,18 @@
 
 AgentPay402 MCP is a stdio MCP server published on npm as `agentpay402-mcp`. It lets the assistant discover x402 APIs, check sellers, and pay for API calls with the user's own wallet, within spending limits the user sets.
 
+## 0. If the client supports remote MCP servers, use the connector
+
+The simplest setup needs no keys. Add the remote MCP server `https://agentpay.x402jp.com/mcp` (Streamable HTTP, no sign-in). In Claude Code:
+
+```bash
+claude mcp add --transport http agentpay https://agentpay.x402jp.com/mcp
+```
+
+The connector never pays by itself. `buy_data` or `request_x402_payment` returns an approval link. The user signs it in Phantom (Solana) or Rabby / MetaMask (Base). Then `get_x402_result` returns the data. The user can lower the limits in the URL (`?max=0.05&daily=0.50`) and choose `network=testnet`. See the README for details.
+
+Use the steps below only when the user wants a local server that pays from a CDP, Privy or Crossmint wallet.
+
 ## 1. Ask the user which wallet to use
 
 Ask the user for `WALLET_PROVIDER`: `cdp`, `privy`, `crossmint`, or `none` (discovery and checking only, no payments). Then ask for that provider's keys only. Never invent or guess keys.

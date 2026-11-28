@@ -2,7 +2,6 @@
   "name": "agentpay402-mcp",
   "displayName": "AgentPay402 MCP",
   "description": "Discover, check and pay for x402 APIs from Claude Code with your own CDP, Privy or Crossmint wallet (USDC on Base and Solana), plus Nevermined credits. Spending limits, Seller Probe lookups, on-chain payment checks and Delivery Receipt refetch are built in.",
-  "version": "0.4.0",
   "author": {
     "name": "x402 Inc."
   },
@@ -21,7 +20,7 @@
     "wallet_provider": {
       "type": "string",
       "title": "Wallet provider",
-      "description": "Which wallet pays: cdp, privy or crossmint. Choose none to use only the discovery and checking tools. Enter cdp, privy, crossmint or none.",
+      "description": "Which wallet pays: cdp, privy or crossmint, or browser to approve every payment yourself in Phantom / Rabby / MetaMask. Choose none to use only the discovery and checking tools. Enter cdp, privy, crossmint, browser or none.",
       "default": "none"
     },
     "cdp_api_key_id": {
@@ -77,6 +76,18 @@
       "title": "Crossmint wallet address",
       "description": "For wallet provider crossmint. The smart wallet the server signer controls.",
       "sensitive": true
+    },
+    "browser_wallet_address": {
+      "type": "string",
+      "title": "Browser wallet address (Base)",
+      "description": "For wallet provider browser. Your Rabby / MetaMask address, to pay on Base. Each payment opens a page in your browser where you sign or reject it.",
+      "sensitive": false
+    },
+    "browser_solana_address": {
+      "type": "string",
+      "title": "Phantom address (Solana)",
+      "description": "For wallet provider browser. Your Phantom address, to pay on Solana. Each payment opens a page in your browser where you approve or reject it in Phantom.",
+      "sensitive": false
     },
     "nvm_api_key": {
       "type": "string",
@@ -150,6 +161,8 @@
         "CLAUDE_PLUGIN_OPTION_CROSSMINT_SERVER_API_KEY": "${user_config.crossmint_server_api_key}",
         "CLAUDE_PLUGIN_OPTION_CROSSMINT_SIGNER_SECRET": "${user_config.crossmint_signer_secret}",
         "CLAUDE_PLUGIN_OPTION_CROSSMINT_WALLET_ADDRESS": "${user_config.crossmint_wallet_address}",
+        "CLAUDE_PLUGIN_OPTION_BROWSER_WALLET_ADDRESS": "${user_config.browser_wallet_address}",
+        "CLAUDE_PLUGIN_OPTION_BROWSER_SOLANA_ADDRESS": "${user_config.browser_solana_address}",
         "CLAUDE_PLUGIN_OPTION_NVM_API_KEY": "${user_config.nvm_api_key}",
         "CLAUDE_PLUGIN_OPTION_NETWORK": "${user_config.network}",
         "CLAUDE_PLUGIN_OPTION_PER_CALL_MAX_USD": "${user_config.per_call_max_usd}",

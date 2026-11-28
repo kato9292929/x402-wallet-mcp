@@ -2,7 +2,7 @@ import type { x402Client } from "@x402/core/client";
 import type { ClientEvmSigner } from "@x402/evm";
 import type { ClientSvmSigner } from "@x402/svm";
 
-export type ProviderId = "cdp" | "privy" | "crossmint";
+export type ProviderId = "cdp" | "privy" | "crossmint" | "browser";
 
 export type EvmSigner = ClientEvmSigner;
 export type SolanaSigner = ClientSvmSigner;
@@ -31,6 +31,8 @@ export interface WalletProvider {
   id: ProviderId;
   /** CAIP-2 chains this wallet can pay on, e.g. "eip155:84532". */
   chains(): string[];
+  /** Order of preference among chains() when a seller takes several at the same price. Default: none. */
+  preferredChains?(): string[];
   address(chain: string): Promise<string>;
   usdcBalance(chain: string): Promise<string>;
   /** Extra balances worth showing (e.g. Crossmint's USDXM on staging). */
@@ -40,6 +42,8 @@ export interface WalletProvider {
   evmSigner?(): Promise<EvmSigner>;
   solanaSigner?(): Promise<SolanaSigner>;
   x402Client?(): Promise<x402Client>;
+  /** Called right before a payment is signed, with the URL being paid. */
+  beforeSign?(info: { url: string; network?: string; amount?: string; payTo?: string }): void | Promise<void>;
 }
 
 export class ProviderConfigError extends Error {
