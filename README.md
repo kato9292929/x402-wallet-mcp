@@ -110,6 +110,8 @@ claude plugin install agentpay402-mcp@x402inc
 
 To update: `claude plugin marketplace update x402inc`.
 
+The same marketplace also lists [x402 Security Check](https://github.com/kato9292929/x402-security-check), which checks the code of an x402 seller's API server: `claude plugin install x402-security-check@x402inc`.
+
 The plugin runs in Claude Code (terminal, IDE extensions, the desktop app's Code tab) and needs Node.js 20+ on your PATH. In Claude chat, use the [connector](#connector) instead.
 
 ### Settings
